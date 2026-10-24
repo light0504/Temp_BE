@@ -1,0 +1,70 @@
+# Dependencies
+node_modules/
+.tools/
+target/
+data/
+
+# Build output and local caches
+dist/
+dist-ssr/
+build/
+web-build/
+coverage/
+.expo/
+.expo-shared/
+.vite/
+.cache/
+.turbo/
+*.tsbuildinfo
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+*.local
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+*.jks
+credentials.json
+service-account*.json
+google-services.json
+GoogleService-Info.plist
+
+# Native generated files
+.gradle/
+Pods/
+DerivedData/
+local.properties
+*.apk
+*.aab
+*.ipa
+*.hprof
+
+# Editor and OS files
+.idea/
+.vs/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~
+
+# Local agent/session state
+.codex/
