@@ -39,6 +39,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(access -> access.requestMatchers("/api/login", "/api/refresh-token", "/api/health").permitAll()
                 .requestMatchers("/api/admin/**").hasRole("ADMIN").requestMatchers("/api/student/**").hasAnyRole("STUDENT","LECTURER")
                 .requestMatchers("/api/staff/**").hasAnyRole("DRIVER","BUS_ATTENDANT")
+                .requestMatchers("/api/lecturer/**").hasRole("LECTURER")
                 .anyRequest().authenticated())
             .exceptionHandling(errors -> errors.authenticationEntryPoint((req,res,error) -> {
                 res.setStatus(401); res.setContentType("application/json;charset=UTF-8");

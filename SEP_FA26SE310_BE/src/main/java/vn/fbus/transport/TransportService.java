@@ -86,7 +86,8 @@ public class TransportService {
     }
     @Transactional
     public TripView changeStatus(long id, String status) {
-        repository.trip(id,true);
+        var trip=repository.trip(id,true);
+        require(trip.executionStatus().equals("READY"),409,"Không thể đổi trạng thái chuyến đã bắt đầu hoặc kết thúc.");
         jdbc.update("UPDATE trip SET status=? WHERE id=?",status,id);
         return repository.view(repository.trip(id,false),0,repository.tripStops(id).size()-1);
     }
@@ -98,11 +99,11 @@ public class TransportService {
         require(slot==null || (slot>=1 && slot<=6),400,"Slot phải từ 1 đến 6.");
         var found = new ArrayList<TripView>();
         for (var trip : repository.trips()) {
-            if (!trip.departureAt().toLocalDate().equals(date) || !trip.status().equals("SCHEDULED") || (routeId!=null && trip.routeId()!=routeId) || (slot!=null && trip.slot()!=slot)) continue;
+            if (!trip.departureAt().toLocalDate().equals(date) || !trip.status().equals("SCHEDULED") || trip.executionStatus().equals("COMPLETED") || (routeId!=null && trip.routeId()!=routeId) || (slot!=null && trip.slot()!=slot)) continue;
             var points = repository.tripStops(trip.id());
             var start = boardingStopId==null ? points.getFirst() : points.stream().filter(p -> p.stopId()==boardingStopId).findFirst().orElse(null);
             var end = alightingStopId==null ? points.getLast() : points.stream().filter(p -> p.stopId()==alightingStopId).findFirst().orElse(null);
-            if (start==null || end==null || start.position()>=end.position() || !start.arrivalAt().isAfter(LocalDateTime.now(clock))) continue;
+            if (start==null || end==null || start.position()>=end.position() || start.position()<trip.currentStopPosition() || !start.arrivalAt().isAfter(LocalDateTime.now(clock))) continue;
             found.add(repository.view(trip,start.position(),end.position()));
         }
         found.sort(Comparator.comparing(TripView::time)); return found;
@@ -116,7 +117,7 @@ public class TransportService {
     }
     public List<SeatView> availableSeats(long tripId, long boarding, long alighting) {
         var trip=repository.trip(tripId,false); var points=interval(tripId,boarding,alighting);
-        require(trip.status().equals("SCHEDULED") && points.getFirst().arrivalAt().isAfter(LocalDateTime.now(clock)),409,"Chuyến không còn nhận đặt chỗ.");
+        require(trip.status().equals("SCHEDULED") && !trip.executionStatus().equals("COMPLETED") && points.getFirst().position()>=trip.currentStopPosition() && points.getFirst().arrivalAt().isAfter(LocalDateTime.now(clock)),409,"Chuyến không còn nhận đặt chỗ.");
         return repository.seats(tripId,points.getFirst().position(),points.getLast().position());
     }
 }

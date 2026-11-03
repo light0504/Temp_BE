@@ -103,4 +103,21 @@ src/main/resources/db/migration/
   V1__initial_schema.sql
 ```
 
-Phạm vi hiện tại chưa bao gồm Google OAuth, check-in/điểm danh của nhân sự, danh sách chờ tự động và báo cáo vận hành. Driver demo được giữ riêng; đăng nhập tài khoản nhân sự thật dùng danh sách phân công từ API. Các trang admin dùng dữ liệu thật. Import email lưu quyền trên backend, có file mẫu và báo lỗi theo dòng; không tạo mật khẩu. Chưa chạy kiểm thử chức năng đồng thời hoặc trên thiết bị thật.
+Phạm vi hiện tại chưa bao gồm Google OAuth, danh sách chờ tự động, GPS hoặc quét QR. Điểm danh và báo cáo của nhân sự dùng API thật. Driver demo được giữ riêng; đăng nhập tài khoản nhân sự thật dùng danh sách phân công từ API. Các trang admin dùng dữ liệu thật. Import email lưu quyền trên backend, có file mẫu và báo lỗi theo dòng; không tạo mật khẩu. Chưa chạy kiểm thử chức năng đồng thời hoặc trên thiết bị thật.
+
+## Wishlist và lịch dài hạn
+
+- Student/lecturer: tìm chuyến, đăng ký Wishlist theo slot khi toàn bộ chuyến phù hợp hết ghế; thêm/rút ngay tại kết quả tìm chuyến, kể cả ngày chưa có chuyến.
+- Admin: lịch tuần hiển thị số chuyến, người đã đặt và wishlist theo ngày/slot; bấm ô xem chi tiết yêu cầu.
+- Lecturer: Home → Lịch dài hạn, chọn tuyến/chặng, khoảng ngày tối đa 90 ngày, các thứ và slot, xem trước rồi xác nhận. Ngày có ghế tạo booking thật; ngày thiếu chuyến/ghế được ghi rõ và có thể đặt bổ sung chủ động.
+- Có thể hủy các chỗ sắp tới chưa check-in của lịch. Không tự tạo chuyến hoặc tự giữ ghế khi chưa có chuyến.
+- Migration V5 tạo trip_wishlist, booking_plan, booking_plan_day; giữ nguyên dữ liệu đang có.
+
+## Lịch lặp và wishlist ngày trống
+
+Admin tạo chuyến bằng ngày cụ thể hoặc lịch lặp theo tuần, có kết thúc theo ngày/số lần/không giới hạn. Backend giữ phạm vi 90 ngày phía trước bằng tác vụ mỗi giờ khi đang chạy; bảng Lịch lặp cho tạm dừng/tiếp tục. Giảng viên được hỏi opt-in wishlist cho ngày NO_TRIP; booking và wishlist được ghi cùng lần xác nhận. Wishlist được quản lý tại trang tìm chuyến, không cần trang riêng. Xem docs/API.md cho endpoint, trạng thái và quy tắc lỗi.
+
+
+## Tài xế và phụ xe
+
+Mobile đăng nhập tài khoản driver/attendant để vào Home nhân sự. Admin tạo chuyến gắn đúng tài khoản; tên nhập tự do không liên kết tài khoản sẽ không có trong lịch phân công. Tài xế bắt đầu → đến từng điểm → hoàn thành; phụ xe xử lý đón/trả/vắng mặt tại điểm hiện tại. Nếu không có phụ xe gắn tài khoản, tài xế thực hiện điểm danh. Báo cáo gửi từ trang chi tiết chuyến và xử lý ở tab Báo cáo trên web. Xem docs/API.md cho điều kiện thời gian, quyền, idempotency và các trạng thái. Không tự chuyển khách từ wishlist khi trả ghế.

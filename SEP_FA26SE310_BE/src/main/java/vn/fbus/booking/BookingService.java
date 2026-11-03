@@ -34,13 +34,14 @@ public class BookingService {
         var trip=trips.trip(input.tripId(),true);
         var interval=transport.interval(trip.id(),input.boardingTripStopId(),input.alightingTripStopId());
         var start=interval.getFirst(); var end=interval.getLast();
-        require(trip.status().equals("SCHEDULED") && start.arrivalAt().isAfter(LocalDateTime.now(clock)),409,"Chuyến không còn nhận đặt chỗ.");
+        require(trip.status().equals("SCHEDULED") && !trip.executionStatus().equals("COMPLETED") && start.position()>=trip.currentStopPosition() && start.arrivalAt().isAfter(LocalDateTime.now(clock)),409,"Chuyến không còn nhận đặt chỗ.");
         require(jdbc.queryForObject("SELECT COUNT(*) FROM booking WHERE user_id=? AND trip_id=? AND status IN ('RESERVED','CHECKED_IN')",Integer.class,user,trip.id())==0,409,"Bạn đã có đặt chỗ trên chuyến này.");
         var seat=trips.seats(trip.id(),start.position(),end.position()).stream().filter(s -> s.seatId()==input.seatId()).findFirst()
             .orElseThrow(() -> new ApiException(400,"Ghế không thuộc chuyến xe."));
         require(seat.status().equals("AVAILABLE"),409,"Ghế vừa được đặt. Vui lòng chọn ghế khác.");
         long id=db.insert("INSERT INTO booking(code,user_id,trip_id,boarding_trip_stop_id,alighting_trip_stop_id,boarding_position,alighting_position,seat_id,idempotency_key,reserved_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
             UUID.randomUUID().toString(),user,trip.id(),start.tripStopId(),end.tripStopId(),start.position(),end.position(),seat.seatId(),input.idempotencyKey(),LocalDateTime.now(clock));
+        jdbc.update("UPDATE trip_wishlist SET status='FULFILLED' WHERE user_id=? AND route_id=? AND travel_date=? AND slot=? AND boarding_stop_id=? AND alighting_stop_id=? AND status='ACTIVE'",user,trip.routeId(),trip.departureAt().toLocalDate(),trip.slot(),start.stopId(),end.stopId());
         return bookings.view(id);
     }
     @Transactional

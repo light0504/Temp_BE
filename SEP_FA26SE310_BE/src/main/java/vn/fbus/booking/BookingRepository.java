@@ -12,7 +12,7 @@ public class BookingRepository {
     public record BookingView(long bookingId, String bookingCode, long tripId, String tripCode,
         long boardingStopId, String boardingStop, long alightingStopId, String alightingStop, long seatId,
         String seatCode, String status, LocalDateTime reservedAt, LocalDateTime checkedInAt, LocalDateTime cancelledAt,
-        LocalDateTime departureAt, long boardingTripStopId, long alightingTripStopId) {}
+        LocalDateTime departureAt, long boardingTripStopId, long alightingTripStopId, String cancellationReason, LocalDateTime alightedAt) {}
     public record BookingRow(long id, long userId, long tripId, long seatId, long boarding, long alighting, String status) {}
     private final JdbcTemplate jdbc;
     private static final String VIEW = """
@@ -27,7 +27,7 @@ public class BookingRepository {
     private final RowMapper<BookingView> viewMapper=(rs,n) -> new BookingView(rs.getLong("id"),rs.getString("code"),rs.getLong("trip_id"),rs.getString("trip_code"),
         rs.getLong("boarding_stop_id"),rs.getString("boarding_stop"),rs.getLong("alighting_stop_id"),rs.getString("alighting_stop"),rs.getLong("seat_id"),rs.getString("seat_code"),
         rs.getString("status"),rs.getObject("reserved_at",LocalDateTime.class),rs.getObject("checked_in_at",LocalDateTime.class),rs.getObject("cancelled_at",LocalDateTime.class),
-        rs.getObject("departure_at",LocalDateTime.class),rs.getLong("boarding_trip_stop_id"),rs.getLong("alighting_trip_stop_id"));
+        rs.getObject("departure_at",LocalDateTime.class),rs.getLong("boarding_trip_stop_id"),rs.getLong("alighting_trip_stop_id"),rs.getString("cancellation_reason"),rs.getObject("alighted_at",LocalDateTime.class));
     public BookingRepository(JdbcTemplate jdbc) { this.jdbc=jdbc; }
     public Optional<BookingRow> byKey(long user, String key) {
         return jdbc.query("SELECT * FROM booking WHERE user_id=? AND idempotency_key=?",rowMapper,user,key).stream().findFirst();
