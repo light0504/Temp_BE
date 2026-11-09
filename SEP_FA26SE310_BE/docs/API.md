@@ -190,8 +190,9 @@ Migration V7 bổ sung tiến trình trên trip, mốc xuống xe/lý do hủy t
 
 - GET /staff/schedule?from=YYYY-MM-DD&to=YYYY-MM-DD: mặc định hôm nay tới 30 ngày sau; tối đa 93 ngày. Mỗi phần tử {trip,operation,canDrive,canManagePassengers}. Có thể chọn khoảng quá khứ để xem lịch sử.
 - GET /staff/trips/{id}: {trip,operation,canDrive,canManagePassengers,passengers}. operation: {status: READY|IN_PROGRESS|COMPLETED,currentStopPosition,startedAt,completedAt}. Chưa bắt đầu có position=-1. passengers gồm bookingId/code, họ tên/email, mã ghế, điểm đón/trả và vị trí, trạng thái RESERVED|CHECKED_IN|ALIGHTED|NO_SHOW|CANCELLED, checkedInAt,alightedAt.
-- PUT /staff/trips/{id}/progress: {action:START|ARRIVE|COMPLETE,expectedPosition}. Chỉ tài xế. START chỉ trong ngày khởi hành, từ 30 phút trước giờ chạy, ghi đang ở điểm đầu. ARRIVE đến điểm tiếp theo theo đúng thứ tự, sớm nhất 15 phút trước giờ dự kiến. Phải xử lý hết hành khách cần đón/trả ở điểm hiện tại trước khi chuyển điểm. COMPLETE chỉ ở điểm cuối và không còn hành khách chờ đón/đang trên xe. Gửi lại cùng bước không chuyển thêm lần nữa; tiến trình cũ trả 409.
-- PUT /staff/trips/{id}/passengers/{bookingId}: {action:CHECK_IN|CHECK_OUT|NO_SHOW}. Chỉ phụ xe được phân công; tài xế có thể thay nếu chuyến không có phụ xe gắn tài khoản. Chuyến phải IN_PROGRESS và không PAUSED. CHECK_IN/NO_SHOW chỉ ở đúng điểm đón, CHECK_OUT chỉ ở đúng điểm trả và đã CHECKED_IN. NO_SHOW chỉ từ giờ đón dự kiến, chuyển booking thành CANCELLED với cancellationReason=NO_SHOW để trả ghế. Không tự chuyển ghế cho wishlist. Các thao tác khóa trip để đồng bộ với đặt/hủy ghế và lưu actor/action/time vào crew_event.
+- PUT /staff/trips/{id}/progress nhận {action:START|DEPART|ARRIVE|COMPLETE,expectedPosition}. Chỉ tài xế được cập nhật tiến trình. START xác nhận đến điểm đầu trong ngày, từ 30 phút trước giờ khởi hành. DEPART yêu cầu đã xử lý khách đón/trả tại bến và đặt operation.inTransit=true. ARRIVE xác nhận đến điểm kế tiếp từ 15 phút trước giờ dự kiến và đặt inTransit=false. COMPLETE yêu cầu đã đến điểm cuối và hoàn tất điểm danh.
+- Trong lúc di chuyển, currentStopPosition giữ vị trí bến vừa rời. Điểm danh và thêm khách tại bến chỉ thực hiện khi xe đã đến bến. API giữ thứ tự các bước khi gửi lại yêu cầu.
+- PUT /staff/trips/{id}/passengers/{bookingId}: {action:CHECK_IN|CHECK_OUT|NO_SHOW}. Tài xế và phụ xe được phân công đều có quyền điểm danh. Chuyến phải IN_PROGRESS và không PAUSED. CHECK_IN/NO_SHOW chỉ ở đúng điểm đón, CHECK_OUT chỉ ở đúng điểm trả và đã CHECKED_IN. NO_SHOW chỉ từ giờ đón dự kiến, chuyển booking thành CANCELLED với cancellationReason=NO_SHOW để trả ghế. Không tự chuyển ghế cho wishlist. Các thao tác khóa trip để đồng bộ với đặt/hủy ghế và lưu actor/action/time vào crew_event.
 
 GET /student/bookings/my trả thêm cancellationReason (NO_SHOW hoặc null) và alightedAt; mobile hiển thị Vắng mặt/Đã xuống xe tương ứng. Chuyến COMPLETED và điểm đón đã đi qua không nhận đặt chỗ mới, kể cả tìm chuyến/lịch dài hạn. Admin không đổi SCHEDULED/PAUSED sau khi chuyến đã bắt đầu.
 
@@ -202,4 +203,45 @@ GET /student/bookings/my trả thêm cancellationReason (NO_SHOW hoặc null) v�
 - GET /admin/reports?status=OPEN|IN_REVIEW|RESOLVED&page=0&size=20: có thể bỏ status để xem tất cả, size tối đa 100. Trả mảng trang hiện tại, sắp xếp mới nhất trước.
 - PUT /admin/reports/{id}: {status:OPEN|IN_REVIEW|RESOLVED,resolution:string(max500)}. Khi RESOLVED bắt buộc kết quả xử lý. Lưu người xử lý và thời gian cập nhật; nhân sự xem được kết quả trong báo cáo đã gửi.
 
-Report trả {reportId,tripId,tripCode,routeName,vehicle,reporter,reporterRole,category,priority,location,description,status,createdAt,resolution,resolvedBy,updatedAt}. Chưa triển khai gửi thông báo đẩy, GPS tự chuyển điểm, quét QR hoặc tự động nhận khách từ wishlist. Dữ liệu tải khi mở trang, kéo làm mới/bấm Tải lại hoặc trở lại app; không cập nhật thời gian thực.
+Report trả {reportId,tripId,tripCode,routeName,vehicle,reporter,reporterRole,category,priority,location,description,status,createdAt,resolution,resolvedBy,updatedAt}. Chưa triển khai gửi thông báo đẩy, GPS tự chuyển điểm hoặc tự động nhận khách từ wishlist. QR check-in được bổ sung ở V8 bên dưới. Dữ liệu tải khi mở trang, kéo làm mới/bấm Tải lại hoặc trở lại app; không cập nhật thời gian thực.
+
+
+## QR check-in động (V8)
+
+V8 tạo booking_checkin_qr: mỗi booking có một generation, session_id và expires_at. Không lưu token đăng nhập hoặc ảnh QR. Generation ngẫu nhiên được ký HMAC-SHA256 với ngữ cảnh riêng, bao gồm bookingId, generation, session và thời hạn. QR không phải access token.
+
+- POST /student/bookings/{id}/check-in-qr (STUDENT/LECTURER, body {}): chỉ chính chủ, RESERVED, SCHEDULED, chưa COMPLETED, chưa qua điểm đón; trong ngày đi từ 30 phút trước giờ đón. Trả {qrCode,serverTime,expiresAt,refreshAfterSeconds:30}. Cùng phiên yêu cầu lại khi QR còn hạn trả cùng generation để retry không làm mã đang hiển thị vô hiệu. Sau 30 giây tạo generation mới; mã cũ bị từ chối kể cả chưa sinh lại. Đăng nhập phiên khác và sinh mã sẽ vô hiệu generation trước.
+- GET /student/bookings/{id}: chỉ chính chủ; trạng thái booking mới nhất để trang QR nhận biết đã check-in/hủy. Không đưa qrCode vào danh sách booking hoặc danh sách hành khách.
+- POST /staff/trips/{id}/check-in-qr/preview: {qrCode}. Yêu cầu quyền điểm danh trên đúng chuyến, chữ ký hợp lệ, generation hiện tại, chưa hết hạn, phiên người mở mã chưa đăng xuất/hết hạn. Trả {bookingId,fullName,email,seatCode,boardingStop,alightingStop,alreadyCheckedIn,serverTime,expiresAt} cho nhân sự đối chiếu. Preview không điểm danh và không gia hạn mã.
+- POST /staff/trips/{id}/check-in-qr: {qrCode}, sau xác nhận đúng hành khách. Xác minh lại toàn bộ mã và điều kiện điểm danh tại thời điểm xác nhận; mã hết hạn sau preview bị từ chối. Trả {bookingId,fullName,seatCode,alreadyCheckedIn,detail}. Dùng CrewService.mark hiện tại, khóa trip và ghi CHECK_IN vào crew_event. Cùng mã còn hạn quét lại trả alreadyCheckedIn=true, không thêm event hoặc đổi giờ điểm danh.
+
+Chuyến cần IN_PROGRESS, không PAUSED, và đang ở đúng điểm đón. Đặt chỗ đã hủy/vắng mặt/xuống xe không check-in được. Tài xế và phụ xe được phân công đều có quyền quét QR, kể cả khi chuyến có cả hai. Các API QR trả Cache-Control: no-store. Thời gian và xác thực do backend quyết định, không tin đếm ngược/bookingId do client tự gửi. Mã sai định dạng/chữ ký trả 400; sai quyền 403; không phải chủ booking 404; hết hạn/sai chuyến/điểm hoặc trạng thái 409.
+
+Mobile sinh hình QR cục bộ bằng react-native-qrcode-svg, không gửi token sang dịch vụ tạo ảnh bên ngoài. Đếm ngược theo thời gian server, trừ thời gian truyền và dùng đồng hồ monotonic; QR hết hạn bị ẩn, không giữ ảnh cũ khi mất mạng. Tự đổi mỗi 30 giây khi trang mở, dừng khi ứng dụng ra nền hoặc booking không RESERVED. Chặn screen capture bằng expo-screen-capture trên thiết bị hỗ trợ. Biện pháp này hạn chế ảnh cũ/chia sẻ màn hình, không chứng minh danh tính vật lý hoặc chặn ảnh chụp bằng thiết bị khác trong 30 giây; phụ xe phải đối chiếu tên/email với người lên xe. Chưa có ảnh chân dung hoặc nhận diện khuôn mặt.
+
+
+## Ưu tiên mở đặt chỗ (V9)
+
+Ba nhóm mở theo thứ tự: STAFF (giảng viên/nhân viên ưu tiên), STUDENT (sinh viên ưu tiên), REGULAR (người dùng còn lại). Nhóm ưu tiên được xác định bằng email trong booking_priority, độc lập với role và JWT. Vai trò LECTURER không tự thêm email vào danh sách. Email không có trong danh sách thuộc REGULAR; thêm trước email chưa có tài khoản được phép, nhưng không tạo tài khoản/cấp quyền đăng nhập. Tài khoản phải được cấp quyền đăng nhập như trước.
+
+ADMIN:
+- GET /admin/booking-priority?page=0&size=20: {content:[{email,group,userId,fullName,updatedAt}],page:{number,size,totalElements,totalPages}}.
+- POST /admin/booking-priority: {email,group:STAFF|STUDENT}, thêm/cập nhật email đã chuẩn hóa chữ thường.
+- PUT /admin/booking-priority/remove: {email}; bỏ ưu tiên, chuyển về REGULAR.
+- GET /admin/booking-priority/template: Excel mẫu cột Email, Nhóm ưu tiên; STAFF hoặc STUDENT, có sheet hướng dẫn.
+- POST /admin/booking-priority/import: multipart file .xlsx/.xls, tối đa 2 MB / 2.000 dòng, không công thức. Trả {totalRows,imported,updated,skipped,failed,errors:[{row,email,message}]}. Cùng email/nhóm: bỏ qua; email đã có khác nhóm: cập nhật; email lặp khác nhóm trong cùng tệp: dòng sau báo lỗi. Dòng hợp lệ được nhập, lỗi database rollback cả yêu cầu. Import/thay đổi thủ công dùng cùng khóa booking-priority. Không thay đổi email-access hoặc role.
+
+POST /admin/trips, /admin/trips/batch, /admin/trips/recurring nhận thêm bookingOpening:
+{staffOpensAt:"2026-11-10T08:00",priorityStudentOpensAt:"2026-11-11T08:00",regularOpensAt:"2026-11-12T08:00"}.
+Ngày giờ là giờ Việt Nam, không gửi UTC hoặc offset. Phải đủ ba mốc, staffOpensAt <= priorityStudentOpensAt <= regularOpensAt < giờ khởi hành của mọi chuyến. Mốc bằng nhau cho phép mở cùng lúc. bookingOpening:null hoặc bỏ trường này nghĩa là mở ngay cho cả ba nhóm (giữ tương thích chuyến cũ). Với batch/lịch lặp, cùng ba ngày giờ tuyệt đối được áp dụng cho toàn bộ chuyến được tạo và các lần sinh thêm sau này; không dịch mốc theo ngày đi.
+
+PUT /admin/trips/{id}/booking-opening: {bookingOpening:{...}} hoặc {bookingOpening:null}. Chỉ sửa chuyến READY và chưa qua giờ khởi hành. Thay đổi chỉ áp dụng cho chuyến đó, không sửa các chuyến khác hay quy tắc lặp; không hủy các booking đã có. Trip DTO admin/staff/student trả bookingOpening.
+
+GET /admin/users trả thêm bookingGroup: STAFF|STUDENT|REGULAR.
+GET /student/trips trả thêm bookingAccess:{group,opensAt,allowed,serverTime}; chuyến chưa mở vẫn được liệt kê để hiển thị thời gian mở thay vì báo không có chuyến.
+GET /student/trips/{id}/booking-access: cùng bookingAccess cho user đang đăng nhập, đọc lại nhóm và giờ mở thật từ database. Không tin group/allowed do client gửi.
+POST /student/bookings: kiểm tra giờ mở trong transaction sau khi khóa trip, trước khi giữ ghế. Chưa đến giờ trả 409 cùng thời gian mở của nhóm. Booking đã thành công gửi lại cùng idempotencyKey/payload vẫn trả bản ghi trước, không bị tạo thêm hoặc mất do admin đổi giờ. Hủy, điểm danh và QR của booking có sẵn không bị ảnh hưởng. Mobile hiển thị mốc mở và tự tải lại quyền khi đến giờ; thay đổi danh sách ưu tiên không cần đăng nhập lại, đọc dữ liệu mới qua Tải lại/Tìm chuyến.
+
+### Ngoại lệ giảng viên đặt theo kỳ
+
+POST /lecturer/booking-plans/preview, POST /lecturer/booking-plans và PUT /lecturer/booking-plans/{id}/retry giữ khả năng đặt dài hạn như trước, không bị chặn bởi bookingOpening. Ngày nào đã có chuyến còn ghế sẽ được đặt dù các nhóm chưa tới giờ mở. Chỉ role LECTURER và lịch ACTIVE thuộc chính user được đi qua BookingService.createForLecturerPlan; endpoint đặt lẻ không có cờ bỏ qua giờ mở từ client. Giảng viên đặt từng chuyến vẫn theo mốc của nhóm email. Tất cả điều kiện ghế trống/chặng, tương lai, trạng thái chuyến, idempotency và giới hạn 90 ngày của lịch dài hạn vẫn áp dụng; không đặt vượt sức chứa, không tự tạo chuyến. Không có tác vụ tự đặt bổ sung sau này.

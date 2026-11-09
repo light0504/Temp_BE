@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vn.fbus.common.*;
 import vn.fbus.transport.*;
+import vn.fbus.priority.BookingOpeningService;
 import java.time.*;
 import java.util.UUID;
 import static vn.fbus.common.ApiException.require;
@@ -17,11 +18,21 @@ public class BookingService {
     private final JdbcTemplate jdbc;
     private final Database db;
     private final Clock clock;
-    public BookingService(BookingRepository bookings, TransportRepository trips, TransportService transport, JdbcTemplate jdbc, Database db, Clock clock) {
-        this.bookings=bookings; this.trips=trips; this.transport=transport; this.jdbc=jdbc; this.db=db; this.clock=clock;
+    private final BookingOpeningService opening;
+    public BookingService(BookingRepository bookings, TransportRepository trips, TransportService transport, JdbcTemplate jdbc, Database db, Clock clock, BookingOpeningService opening) {
+        this.bookings=bookings; this.trips=trips; this.transport=transport; this.jdbc=jdbc; this.db=db; this.clock=clock; this.opening=opening;
     }
     @Transactional
-    public BookingRepository.BookingView create(long user, Contracts.NewBooking input) {
+    public BookingRepository.BookingView create(long user, Contracts.NewBooking input) { return createInternal(user,input,false); }
+    @Transactional
+    // Only owned lecturer plans use this path; the single-trip API has no bypass flag.
+    public BookingRepository.BookingView createForLecturerPlan(long user,long plan,Contracts.NewBooking input) {
+        jdbc.queryForList("SELECT id FROM app_user WHERE id=? FOR UPDATE",user);
+        require("LECTURER".equals(jdbc.queryForObject("SELECT role FROM app_user WHERE id=?",String.class,user)),403,"Chỉ giảng viên được đặt lịch dài hạn.");
+        require(jdbc.queryForObject("SELECT COUNT(*) FROM booking_plan WHERE id=? AND user_id=? AND status='ACTIVE'",Integer.class,plan,user)==1,403,"Lịch không thuộc giảng viên hoặc đã hủy.");
+        return createInternal(user,input,true);
+    }
+    private BookingRepository.BookingView createInternal(long user,Contracts.NewBooking input,boolean lecturerPlan) {
         // Lock order is always user then trip. A trip lock serializes all seat/interval changes across API instances.
         jdbc.queryForList("SELECT id FROM app_user WHERE id=? FOR UPDATE",user);
         var previous=bookings.byKey(user,input.idempotencyKey());
@@ -32,9 +43,10 @@ public class BookingService {
             return bookings.view(old.id());
         }
         var trip=trips.trip(input.tripId(),true);
+        if(!lecturerPlan)opening.requireOpen(user,trip);
         var interval=transport.interval(trip.id(),input.boardingTripStopId(),input.alightingTripStopId());
         var start=interval.getFirst(); var end=interval.getLast();
-        require(trip.status().equals("SCHEDULED") && !trip.executionStatus().equals("COMPLETED") && start.position()>=trip.currentStopPosition() && start.arrivalAt().isAfter(LocalDateTime.now(clock)),409,"Chuyến không còn nhận đặt chỗ.");
+        require(trip.status().equals("SCHEDULED") && !trip.executionStatus().equals("COMPLETED") && start.position()>=trip.firstBoardingPosition() && start.arrivalAt().isAfter(LocalDateTime.now(clock)),409,"Chuyến không còn nhận đặt chỗ.");
         require(jdbc.queryForObject("SELECT COUNT(*) FROM booking WHERE user_id=? AND trip_id=? AND status IN ('RESERVED','CHECKED_IN')",Integer.class,user,trip.id())==0,409,"Bạn đã có đặt chỗ trên chuyến này.");
         var seat=trips.seats(trip.id(),start.position(),end.position()).stream().filter(s -> s.seatId()==input.seatId()).findFirst()
             .orElseThrow(() -> new ApiException(400,"Ghế không thuộc chuyến xe."));

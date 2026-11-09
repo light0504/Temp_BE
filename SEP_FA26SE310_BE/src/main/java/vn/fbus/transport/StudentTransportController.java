@@ -6,6 +6,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import vn.fbus.auth.AuthFilter.Identity;
 import vn.fbus.common.*;
+import vn.fbus.priority.BookingOpeningService;
 import java.time.LocalDate;
 
 @RestController @RequestMapping("/api/student")
@@ -13,13 +14,15 @@ public class StudentTransportController {
     private final TransportRepository repository;
     private final TransportService service;
     private final JdbcTemplate jdbc;
-    public StudentTransportController(TransportRepository repository, TransportService service, JdbcTemplate jdbc) { this.repository=repository; this.service=service; this.jdbc=jdbc; }
+    private final BookingOpeningService opening;
+    public StudentTransportController(TransportRepository repository, TransportService service, JdbcTemplate jdbc,BookingOpeningService opening) { this.repository=repository; this.service=service; this.jdbc=jdbc;this.opening=opening; }
     @GetMapping("/routes") ApiResponse<?> routes() { return ApiResponse.ok(repository.routes()); }
     @GetMapping("/stops") ApiResponse<?> stops(@RequestParam long routeId) { return ApiResponse.ok(repository.route(routeId).stops()); }
-    @GetMapping("/trips") ApiResponse<?> trips(@RequestParam LocalDate date, @RequestParam(required=false) Long routeId,
+    @GetMapping("/trips") ApiResponse<?> trips(@AuthenticationPrincipal Identity who,@RequestParam LocalDate date, @RequestParam(required=false) Long routeId,
         @RequestParam(required=false) Long boardingStopId, @RequestParam(required=false) Long alightingStopId, @RequestParam(required=false) Integer slot) {
-        return ApiResponse.ok(service.search(date,routeId,boardingStopId,alightingStopId,slot));
+        return ApiResponse.ok(opening.studentTrips(who.userId(),service.search(date,routeId,boardingStopId,alightingStopId,slot)));
     }
+    @GetMapping("/trips/{id}/booking-access") ApiResponse<?> bookingAccess(@AuthenticationPrincipal Identity who,@PathVariable long id){return ApiResponse.ok(opening.access(who.userId(),repository.trip(id,false)));}
     @GetMapping("/trips/{id}/stops") ApiResponse<?> tripStops(@PathVariable long id) { repository.trip(id,false); return ApiResponse.ok(repository.tripStops(id)); }
     @GetMapping("/trips/{id}/seats") ApiResponse<?> seats(@PathVariable long id, @RequestParam long boardingTripStopId, @RequestParam long alightingTripStopId) {
         return ApiResponse.ok(service.availableSeats(id,boardingTripStopId,alightingTripStopId));

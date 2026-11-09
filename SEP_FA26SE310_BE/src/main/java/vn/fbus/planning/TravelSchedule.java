@@ -34,7 +34,7 @@ public class TravelSchedule {
             var points=trips.tripStops(trip.id());
             var start=points.stream().filter(p -> p.stopId()==boarding).findFirst().orElse(null);
             var end=points.stream().filter(p -> p.stopId()==alighting).findFirst().orElse(null);
-            if(start!=null && end!=null && start.position()<end.position() && start.position()>=trip.currentStopPosition() && start.arrivalAt().isAfter(LocalDateTime.now(clock)))
+            if(start!=null && end!=null && start.position()<end.position() && start.position()>=trip.firstBoardingPosition() && start.arrivalAt().isAfter(LocalDateTime.now(clock)))
                 result.add(new Candidate(trip,start,end,trips.seats(trip.id(),start.position(),end.position())));
         }
         return result;

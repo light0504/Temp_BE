@@ -6,6 +6,7 @@ import org.springframework.transaction.annotation.Transactional;
 import vn.fbus.common.*;
 import vn.fbus.transport.TransportRepository.*;
 import vn.fbus.fleet.TripVehicleResolver;
+import vn.fbus.priority.BookingOpeningService;
 import java.time.*;
 import java.util.*;
 import static vn.fbus.common.ApiException.require;
@@ -45,7 +46,7 @@ public class TransportService {
     @Transactional
     public TripView createTrip(Contracts.NewTrip input) {
         jdbc.queryForList("SELECT name FROM operation_lock WHERE name='trip-schedule' FOR UPDATE");
-        return insertTrip(repository.route(input.routeId()),vehicles.resolve(input),input.date(),input.time(),input.slot());
+        return insertTrip(repository.route(input.routeId()),vehicles.resolve(input),input.date(),input.time(),input.slot(),input.bookingOpening(),input.bookingOpeningLead());
     }
     @Transactional
     public List<TripView> createBatch(Contracts.BatchTrips input) {
@@ -53,12 +54,13 @@ public class TransportService {
         jdbc.queryForList("SELECT name FROM operation_lock WHERE name='trip-schedule' FOR UPDATE");
         var route=repository.route(input.routeId()); var vehicle=vehicles.resolve(input);
         var created=new ArrayList<TripView>();
-        for (var date : input.dates().stream().sorted().toList()) created.add(insertTrip(route,vehicle,date,input.time(),input.slot()));
+        for (var date : input.dates().stream().sorted().toList()) created.add(insertTrip(route,vehicle,date,input.time(),input.slot(),input.bookingOpening(),input.bookingOpeningLead()));
         return created;
     }
-    private TripView insertTrip(RouteView route, TripVehicleResolver.Assignment vehicle, LocalDate date, LocalTime time, int slot) {
+    private TripView insertTrip(RouteView route, TripVehicleResolver.Assignment vehicle, LocalDate date, LocalTime time, int slot, Contracts.BookingOpening absoluteOpening, Contracts.BookingOpeningLead lead) {
         var departure = date.atTime(time.withSecond(0).withNano(0));
         require(departure.isAfter(LocalDateTime.now(clock)),400,"Giờ khởi hành phải ở tương lai: "+date+".");
+        var opening = BookingOpeningService.resolve(absoluteOpening, lead, departure);
         var arrival = departure.plusMinutes(route.stops().getLast().offsetMinutes());
         var params=new ArrayList<Object>(); params.add(vehicle.licensePlate());
         String sql="SELECT COUNT(*) FROM trip WHERE (UPPER(REPLACE(vehicle,' ',''))=?";
@@ -75,8 +77,9 @@ public class TransportService {
         int conflicts=jdbc.queryForObject(sql,Integer.class,params.toArray());
         require(conflicts==0,409,"Trùng lịch xe, tài xế hoặc bus attendant ngày "+date+". Chưa tạo chuyến nào trong lần lưu này.");
         String code = route.routeCode()+"-"+UUID.randomUUID().toString().substring(0,8);
-        long id = db.insert("INSERT INTO trip(code,route_id,departure_at,arrival_at,slot,vehicle,driver,capacity,vehicle_id,driver_id,bus_attendant_id,bus_attendant) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-            code,route.routeId(),departure,arrival,slot,vehicle.licensePlate(),vehicle.driverName(),vehicle.capacity(),vehicle.vehicleId(),vehicle.driverId(),vehicle.busAttendantId(),vehicle.busAttendantName());
+        long id = db.insert("INSERT INTO trip(code,route_id,departure_at,arrival_at,slot,vehicle,driver,capacity,vehicle_id,driver_id,bus_attendant_id,bus_attendant,staff_booking_opens_at,priority_student_booking_opens_at,regular_booking_opens_at,staff_booking_lead_hours,priority_student_booking_lead_hours,regular_booking_lead_hours) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            code,route.routeId(),departure,arrival,slot,vehicle.licensePlate(),vehicle.driverName(),vehicle.capacity(),vehicle.vehicleId(),vehicle.driverId(),vehicle.busAttendantId(),vehicle.busAttendantName(),opening==null?null:opening.staffOpensAt(),opening==null?null:opening.priorityStudentOpensAt(),opening==null?null:opening.regularOpensAt(),
+            lead==null?null:lead.staffHours(),lead==null?null:lead.priorityStudentHours(),lead==null?null:lead.regularHours());
         for (int i=0; i<route.stops().size(); i++) {
             var point=route.stops().get(i);
             jdbc.update("INSERT INTO trip_stop(trip_id,stop_id,position,arrival_at) VALUES (?,?,?,?)",id,point.stopId(),i,departure.plusMinutes(point.offsetMinutes()));
@@ -91,6 +94,19 @@ public class TransportService {
         jdbc.update("UPDATE trip SET status=? WHERE id=?",status,id);
         return repository.view(repository.trip(id,false),0,repository.tripStops(id).size()-1);
     }
+    @Transactional
+    public TripView changeBookingOpening(long id,Contracts.BookingOpeningUpdate input) {
+        var trip=repository.trip(id,true);
+        require(trip.executionStatus().equals("READY")&&trip.departureAt().isAfter(LocalDateTime.now(clock)),409,"Chỉ sửa giờ mở đặt chỗ của chuyến chưa khởi hành.");
+        var lead = input.bookingOpeningLead();
+        var opening = BookingOpeningService.resolve(input.bookingOpening(), lead, trip.departureAt());
+        jdbc.update("""
+            UPDATE trip SET staff_booking_opens_at=?,priority_student_booking_opens_at=?,regular_booking_opens_at=?,
+                staff_booking_lead_hours=?,priority_student_booking_lead_hours=?,regular_booking_lead_hours=? WHERE id=?
+            """,opening==null?null:opening.staffOpensAt(),opening==null?null:opening.priorityStudentOpensAt(),opening==null?null:opening.regularOpensAt(),
+            lead==null?null:lead.staffHours(),lead==null?null:lead.priorityStudentHours(),lead==null?null:lead.regularHours(),id);
+        return repository.view(repository.trip(id,false),0,repository.tripStops(id).size()-1);
+    }
     public List<TripView> adminTrips() {
         return repository.trips().stream().map(t -> repository.view(t,0,repository.tripStops(t.id()).size()-1)).toList();
     }
@@ -103,7 +119,7 @@ public class TransportService {
             var points = repository.tripStops(trip.id());
             var start = boardingStopId==null ? points.getFirst() : points.stream().filter(p -> p.stopId()==boardingStopId).findFirst().orElse(null);
             var end = alightingStopId==null ? points.getLast() : points.stream().filter(p -> p.stopId()==alightingStopId).findFirst().orElse(null);
-            if (start==null || end==null || start.position()>=end.position() || start.position()<trip.currentStopPosition() || !start.arrivalAt().isAfter(LocalDateTime.now(clock))) continue;
+            if (start==null || end==null || start.position()>=end.position() || start.position()<trip.firstBoardingPosition() || !start.arrivalAt().isAfter(LocalDateTime.now(clock))) continue;
             found.add(repository.view(trip,start.position(),end.position()));
         }
         found.sort(Comparator.comparing(TripView::time)); return found;
@@ -117,7 +133,7 @@ public class TransportService {
     }
     public List<SeatView> availableSeats(long tripId, long boarding, long alighting) {
         var trip=repository.trip(tripId,false); var points=interval(tripId,boarding,alighting);
-        require(trip.status().equals("SCHEDULED") && !trip.executionStatus().equals("COMPLETED") && points.getFirst().position()>=trip.currentStopPosition() && points.getFirst().arrivalAt().isAfter(LocalDateTime.now(clock)),409,"Chuyến không còn nhận đặt chỗ.");
+        require(trip.status().equals("SCHEDULED") && !trip.executionStatus().equals("COMPLETED") && points.getFirst().position()>=trip.firstBoardingPosition() && points.getFirst().arrivalAt().isAfter(LocalDateTime.now(clock)),409,"Chuyến không còn nhận đặt chỗ.");
         return repository.seats(tripId,points.getFirst().position(),points.getLast().position());
     }
 }

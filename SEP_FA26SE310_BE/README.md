@@ -54,6 +54,18 @@ docker compose start          # Chạy lại
 
 Các biến cấu hình: `DB_URL`, `DB_USER`, `DB_PASSWORD`, `JWT_SECRET`, `ALLOWED_ORIGINS` (danh sách origin cách nhau dấu phẩy), `SPRING_PROFILES_ACTIVE`, `PORT`. Triển khai công khai cần HTTPS và secret riêng. Không đưa file database hay secret lên Git.
 
+### Script tạo schema PostgreSQL
+
+[postgresql-schema.sql](docs/db/postgresql-schema.sql) tổng hợp các migration V1–V10 để khởi tạo thủ công trên schema trống. Script tạo bảng, ràng buộc, chỉ mục và dữ liệu hệ thống từ migration.
+
+~~~powershell
+psql -h localhost -U fbus -d fbus -v ON_ERROR_STOP=1 -f docs/db/postgresql-schema.sql
+~~~
+
+Thay host, user và tên database theo môi trường PostgreSQL của bạn. Tạo database trước khi chạy. Script không thêm tài khoản mẫu và không ghi lịch sử Flyway.
+
+Khi chạy BE bằng Docker hoặc Spring Boot, hãy để Flyway tự tạo schema trên database trống. Chỉ dùng bản SQL tổng hợp cho database khởi tạo thủ công.
+
 ## Luồng sử dụng
 
 1. Đăng nhập web bằng tài khoản admin.
@@ -103,7 +115,7 @@ src/main/resources/db/migration/
   V1__initial_schema.sql
 ```
 
-Phạm vi hiện tại chưa bao gồm Google OAuth, danh sách chờ tự động, GPS hoặc quét QR. Điểm danh và báo cáo của nhân sự dùng API thật. Driver demo được giữ riêng; đăng nhập tài khoản nhân sự thật dùng danh sách phân công từ API. Các trang admin dùng dữ liệu thật. Import email lưu quyền trên backend, có file mẫu và báo lỗi theo dòng; không tạo mật khẩu. Chưa chạy kiểm thử chức năng đồng thời hoặc trên thiết bị thật.
+Phạm vi hiện tại chưa bao gồm Google OAuth, danh sách chờ tự động hoặc GPS. Điểm danh và báo cáo của nhân sự dùng API thật. Driver demo được giữ riêng; đăng nhập tài khoản nhân sự thật dùng danh sách phân công từ API. Các trang admin dùng dữ liệu thật. Import email lưu quyền trên backend, có file mẫu và báo lỗi theo dòng; không tạo mật khẩu. Chưa chạy kiểm thử chức năng đồng thời hoặc trên thiết bị thật.
 
 ## Wishlist và lịch dài hạn
 
@@ -120,4 +132,14 @@ Admin tạo chuyến bằng ngày cụ thể hoặc lịch lặp theo tuần, c�
 
 ## Tài xế và phụ xe
 
-Mobile đăng nhập tài khoản driver/attendant để vào Home nhân sự. Admin tạo chuyến gắn đúng tài khoản; tên nhập tự do không liên kết tài khoản sẽ không có trong lịch phân công. Tài xế bắt đầu → đến từng điểm → hoàn thành; phụ xe xử lý đón/trả/vắng mặt tại điểm hiện tại. Nếu không có phụ xe gắn tài khoản, tài xế thực hiện điểm danh. Báo cáo gửi từ trang chi tiết chuyến và xử lý ở tab Báo cáo trên web. Xem docs/API.md cho điều kiện thời gian, quyền, idempotency và các trạng thái. Không tự chuyển khách từ wishlist khi trả ghế.
+Mobile đăng nhập tài khoản driver/attendant để vào Home nhân sự. Admin tạo chuyến gắn đúng tài khoản; tên nhập tự do không liên kết tài khoản sẽ không có trong lịch phân công. Tài xế bắt đầu → đến từng điểm → hoàn thành; phụ xe xử lý đón/trả/vắng mặt tại điểm hiện tại. Cả tài xế và phụ xe được phân công đều thực hiện điểm danh. Báo cáo gửi từ trang chi tiết chuyến và xử lý ở tab Báo cáo trên web. Xem docs/API.md cho điều kiện thời gian, quyền, idempotency và các trạng thái. Không tự chuyển khách từ wishlist khi trả ghế.
+
+
+## QR lên xe
+
+Student/lecturer mở QR ở Chỗ của tôi, mã tự đổi 30 giây và được backend xác thực. Tài xế/phụ xe chọn Home → Quét QR → chọn chuyến đang thực hiện, đối chiếu tên/email/ghế rồi xác nhận. Mã gắn booking và phiên đăng nhập, có chữ ký, hết hạn không dùng được; quét lặp không điểm danh trùng. Migration V8; xem docs/API.md cho hợp đồng. Cần mạng, không có check-in QR offline.
+
+
+## Giờ mở đặt chỗ theo nhóm
+
+Admin → Người dùng → Ưu tiên đặt chỗ: thêm email thủ công hoặc nhập Excel/tải mẫu. Có STAFF (giảng viên/nhân viên), STUDENT (sinh viên ưu tiên); email còn lại REGULAR. Khi tạo chuyến, bật Mở đặt chỗ theo nhóm ưu tiên và chọn ba mốc ngày giờ. Có thể sửa trong chi tiết chuyến trên lịch tuần. V9 giữ mốc trên trip/trip_recurrence; chuyến cũ không bị hạn chế khi chưa cấu hình. Lịch dài hạn theo kỳ của giảng viên được miễn giờ mở; đặt lẻ vẫn phải đúng giờ nhóm. Xem docs/API.md.

@@ -25,11 +25,11 @@ public class CrewService {
  }
  private boolean driver(long user, TripRow t) { return Objects.equals(t.driverId(),user); }
  private boolean attendance(long user, TripRow t) {
-   return Objects.equals(t.busAttendantId(),user) || (driver(user,t) && t.busAttendantId()==null);
+   return Objects.equals(t.busAttendantId(),user) || driver(user,t);
  }
  private Operation operation(long id) {
-   return jdbc.query("SELECT execution_status,current_stop_position,started_at,completed_at FROM trip WHERE id=?",
-    (r,n)->new Operation(r.getString(1),r.getInt(2),r.getObject(3,LocalDateTime.class),r.getObject(4,LocalDateTime.class)),id).getFirst();
+   return jdbc.query("SELECT execution_status,current_stop_position,started_at,completed_at,in_transit FROM trip WHERE id=?",
+    (r,n)->new Operation(r.getString(1),r.getInt(2),r.getObject(3,LocalDateTime.class),r.getObject(4,LocalDateTime.class),r.getBoolean("in_transit")),id).getFirst();
  }
  public List<CrewTrip> list(long user, LocalDate from, LocalDate to) {
    require(!to.isBefore(from) && !to.isAfter(from.plusDays(92)),400,"Khoảng thời gian tối đa 93 ngày.");
@@ -40,12 +40,15 @@ public class CrewService {
  @Transactional(readOnly=true, isolation=org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
  public Detail detail(long user,long id) {
    var t=assigned(user,id,false);
-   return new Detail(trips.view(t,0,trips.tripStops(id).size()-1),operation(id),driver(user,t),attendance(user,t),passengers(id));
+   int lastStop = trips.tripStops(id).size() - 1;
+   return new Detail(trips.view(t, 0, lastStop), operation(id), driver(user, t), attendance(user, t),
+       passengers(id), trips.seats(id, 0, lastStop), now());
  }
  private List<Passenger> passengers(long id) {
    return jdbc.query("""
-     SELECT b.*,u.full_name,u.email,s.code AS seat_code,bn.name AS boarding_name,an.name AS alighting_name
-     FROM booking b JOIN app_user u ON u.id=b.user_id JOIN seat s ON s.id=b.seat_id
+     SELECT b.*, COALESCE(u.full_name, 'Sinh viên ' || b.walk_in_student_code) AS full_name,
+       u.email, s.code AS seat_code, bn.name AS boarding_name, an.name AS alighting_name
+     FROM booking b LEFT JOIN app_user u ON u.id=b.user_id JOIN seat s ON s.id=b.seat_id
      JOIN trip_stop bs ON bs.id=b.boarding_trip_stop_id JOIN stop bn ON bn.id=bs.stop_id
      JOIN trip_stop als ON als.id=b.alighting_trip_stop_id JOIN stop an ON an.id=als.stop_id
      WHERE b.trip_id=? ORDER BY b.boarding_position,s.id,b.id
@@ -53,57 +56,86 @@ public class CrewService {
        r.getLong("boarding_trip_stop_id"),r.getString("boarding_name"),r.getInt("boarding_position"),r.getLong("alighting_trip_stop_id"),
        r.getString("alighting_name"),r.getInt("alighting_position"),
        "NO_SHOW".equals(r.getString("cancellation_reason"))?"NO_SHOW":r.getObject("alighted_at")!=null?"ALIGHTED":r.getString("status"),
-       r.getObject("checked_in_at",LocalDateTime.class),r.getObject("alighted_at",LocalDateTime.class)),id);
+       r.getObject("checked_in_at",LocalDateTime.class),r.getObject("alighted_at",LocalDateTime.class),r.getString("walk_in_student_code")),id);
  }
  private void event(long user,long id,Long booking,String action,int position) {
    jdbc.update("INSERT INTO crew_event(trip_id,user_id,booking_id,action,stop_position,created_at) VALUES (?,?,?,?,?,?)",id,user,booking,action,position,now());
  }
  @Transactional
- public Detail progress(long user,long id,Progress input) {
-   var t=assigned(user,id,true); require(driver(user,t),403,"Chỉ tài xế được cập nhật tiến trình chuyến.");
-   var o=operation(id); var stops=trips.tripStops(id); var time=now();
-   int expected=input.expectedPosition();
-   // Replay after a lost response must not move the bus to the next stop twice.
-   if (input.action().equals("START") && o.status().equals("IN_PROGRESS") && expected==-1 && o.currentStopPosition()==0) return detail(user,id);
-   if (input.action().equals("ARRIVE") && o.status().equals("IN_PROGRESS") && o.currentStopPosition()==expected+1) return detail(user,id);
-   if (input.action().equals("COMPLETE") && o.status().equals("COMPLETED") && expected==o.currentStopPosition()) return detail(user,id);
-   require(expected==o.currentStopPosition(),409,"Tiến trình đã thay đổi. Vui lòng tải lại.");
-   require(t.status().equals("SCHEDULED"),409,"Chuyến đang tạm dừng.");
-   if (input.action().equals("START")) {
-     require(o.status().equals("READY"),409,"Chuyến đã bắt đầu hoặc kết thúc.");
-     require(t.departureAt().toLocalDate().equals(time.toLocalDate()) && !time.isBefore(t.departureAt().minusMinutes(30)),409,"Chỉ bắt đầu trong ngày, từ 30 phút trước giờ khởi hành.");
-     jdbc.update("UPDATE trip SET execution_status='IN_PROGRESS',current_stop_position=0,started_at=? WHERE id=?",time,id);
-     event(user,id,null,"START",0);
-   } else {
-     require(o.status().equals("IN_PROGRESS"),409,"Chuyến chưa bắt đầu hoặc đã kết thúc.");
-     int position=o.currentStopPosition();
-     int pending=jdbc.queryForObject("""
-       SELECT COUNT(*) FROM booking WHERE trip_id=? AND
-       ((status='RESERVED' AND boarding_position<=?) OR (status='CHECKED_IN' AND alighted_at IS NULL AND alighting_position<=?))
-       """,Integer.class,id,position,position);
-     require(pending==0,409,"Cần hoàn tất điểm danh đón/trả tại điểm hiện tại.");
-     if (input.action().equals("ARRIVE")) {
-       require(position<stops.size()-1,409,"Đã đến điểm cuối.");
-       require(!time.isBefore(stops.get(position+1).arrivalAt().minusMinutes(15)),409,"Chưa đến thời gian của điểm tiếp theo (sớm nhất 15 phút trước lịch).");
-       jdbc.update("UPDATE trip SET current_stop_position=? WHERE id=?",position+1,id);
-       event(user,id,null,"ARRIVE",position+1);
-     } else {
-       require(position==stops.size()-1,409,"Chưa đến điểm cuối.");
-       require(jdbc.queryForObject("SELECT COUNT(*) FROM booking WHERE trip_id=? AND (status='RESERVED' OR (status='CHECKED_IN' AND alighted_at IS NULL))",Integer.class,id)==0,409,"Còn hành khách chưa hoàn tất điểm danh.");
-       jdbc.update("UPDATE trip SET execution_status='COMPLETED',completed_at=? WHERE id=?",time,id);
-       event(user,id,null,"COMPLETE",position);
+ public Detail progress(long user, long id, Progress input) {
+   var trip = assigned(user, id, true);
+   require(driver(user, trip), 403, "Chỉ tài xế được cập nhật tiến trình chuyến.");
+   var operation = operation(id);
+   String action = input.action();
+   int position = operation.currentStopPosition();
+   int expected = input.expectedPosition();
+   boolean inProgress = operation.status().equals("IN_PROGRESS");
+
+   // Retries acknowledge the same step without advancing the trip again.
+   boolean replay = switch (action) {
+     case "START" -> inProgress && expected == -1 && position == 0;
+     case "DEPART" -> operation.inTransit() && position == expected;
+     case "ARRIVE" -> inProgress && expected >= 0 && position == expected + 1;
+     case "COMPLETE" -> operation.status().equals("COMPLETED") && position == expected;
+     default -> false;
+   };
+   if (replay) return detail(user, id);
+   require(position == expected, 409, "Tiến trình đã thay đổi. Vui lòng tải lại.");
+   require(trip.status().equals("SCHEDULED"), 409, "Chuyến đang tạm dừng.");
+
+   var stops = trips.tripStops(id);
+   int lastPosition = stops.getLast().position();
+   var time = now();
+   switch (action) {
+     case "START" -> {
+       require(operation.status().equals("READY"), 409, "Chuyến đã bắt đầu hoặc kết thúc.");
+       require(trip.departureAt().toLocalDate().equals(time.toLocalDate())
+           && !time.isBefore(trip.departureAt().minusMinutes(30)), 409,
+           "Chỉ xác nhận đến điểm đầu trong ngày, từ 30 phút trước giờ khởi hành.");
+       position = 0;
+       jdbc.update("UPDATE trip SET execution_status='IN_PROGRESS',current_stop_position=?,started_at=? WHERE id=?", position, time, id);
      }
+     case "DEPART" -> {
+       require(inProgress && !operation.inTransit(), 409, "Xe chưa dừng tại bến.");
+       require(position < lastPosition, 409, "Đã đến điểm cuối.");
+       requireAttendanceComplete(id, position);
+       jdbc.update("UPDATE trip SET in_transit=TRUE WHERE id=?", id);
+     }
+     case "ARRIVE" -> {
+       require(operation.inTransit() && position < lastPosition, 409, "Hãy bắt đầu di chuyển trước.");
+       int destination = position + 1;
+       require(!time.isBefore(stops.get(destination).arrivalAt().minusMinutes(15)), 409,
+           "Chỉ xác nhận đến bến từ 15 phút trước giờ dự kiến.");
+       jdbc.update("UPDATE trip SET current_stop_position=?,in_transit=FALSE WHERE id=?", destination, id);
+       position = destination;
+     }
+     case "COMPLETE" -> {
+       require(inProgress && !operation.inTransit() && position == lastPosition, 409, "Xe chưa đến điểm cuối.");
+       requireAttendanceComplete(id, position);
+       jdbc.update("UPDATE trip SET execution_status='COMPLETED',completed_at=? WHERE id=?", time, id);
+     }
+     default -> throw new ApiException(400, "Thao tác không hợp lệ.");
    }
-   return detail(user,id);
+   event(user, id, null, action, position);
+   return detail(user, id);
+ }
+ private void requireAttendanceComplete(long tripId, int position) {
+   int pending = jdbc.queryForObject("""
+       SELECT COUNT(*) FROM booking WHERE trip_id=? AND
+       ((status='RESERVED' AND boarding_position<=?)
+         OR (status='CHECKED_IN' AND alighted_at IS NULL AND alighting_position<=?))
+       """, Integer.class, tripId, position, position);
+   require(pending == 0, 409, "Còn khách cần điểm danh tại bến.");
  }
  @Transactional
  public Detail mark(long user,long id,long bookingId,Attendance input) {
-   var t=assigned(user,id,true); require(attendance(user,t),403,"Phụ xe được phân công thực hiện điểm danh.");
+   var t=assigned(user,id,true); require(attendance(user,t),403,"Chỉ nhân sự được phân công được điểm danh.");
    var p=passengers(id).stream().filter(b->b.bookingId()==bookingId).findFirst().orElseThrow(()->new ApiException(404,"Không tìm thấy đặt chỗ trên chuyến."));
    String desired=switch(input.action()){case "CHECK_IN"->"CHECKED_IN";case "CHECK_OUT"->"ALIGHTED";default->"NO_SHOW";};
    if (p.status().equals(desired)) return detail(user,id);
    var o=operation(id);
    require(t.status().equals("SCHEDULED") && o.status().equals("IN_PROGRESS"),409,"Chuyến chưa bắt đầu, đang tạm dừng hoặc đã kết thúc.");
+   require(!o.inTransit(),409,"Xe đang di chuyển.");
    if (input.action().equals("CHECK_OUT")) {
      require(p.status().equals("CHECKED_IN") && p.alightingPosition()==o.currentStopPosition(),409,"Chỉ trả hành khách đã lên xe tại đúng điểm trả.");
      jdbc.update("UPDATE booking SET alighted_at=? WHERE id=?",now(),bookingId);
@@ -118,6 +150,64 @@ public class CrewService {
    }
    event(user,id,bookingId,input.action(),o.currentStopPosition());
    return detail(user,id);
+ }
+ @Transactional
+ public Detail addWalkIn(long user, long tripId, WalkIn input) {
+   var trip = assigned(user, tripId, true);
+   require(attendance(user, trip), 403, "Bạn không có quyền thêm hành khách trên chuyến này.");
+   String studentCode = input.studentCode().trim().toUpperCase(Locale.ROOT);
+   require(studentCode.matches("[A-Z0-9][A-Z0-9-]{1,29}"), 400, "Mã số sinh viên không hợp lệ.");
+
+   var previous = jdbc.queryForList("""
+       SELECT walk_in_student_code, seat_id, boarding_trip_stop_id, alighting_trip_stop_id
+       FROM booking WHERE trip_id=? AND user_id IS NULL AND idempotency_key=?
+       """, tripId, input.idempotencyKey());
+   if (!previous.isEmpty()) {
+     var old = previous.getFirst();
+     require(studentCode.equals(old.get("walk_in_student_code"))
+         && input.seatId().longValue() == ((Number) old.get("seat_id")).longValue()
+         && input.boardingTripStopId().longValue() == ((Number) old.get("boarding_trip_stop_id")).longValue()
+         && input.alightingTripStopId().longValue() == ((Number) old.get("alighting_trip_stop_id")).longValue(),
+         409, "Mã yêu cầu đã dùng cho một lượt lên xe khác.");
+     return detail(user, tripId);
+   }
+
+   require(trip.status().equals("SCHEDULED") && trip.executionStatus().equals("IN_PROGRESS"),
+       409, "Chỉ thêm khách khi chuyến đang thực hiện.");
+   require(!trip.inTransit(), 409, "Xe đang di chuyển.");
+   var stops = trips.tripStops(tripId);
+   int currentPosition = trip.currentStopPosition();
+   var boarding = stops.stream().filter(stop -> stop.position() == currentPosition).findFirst()
+       .orElseThrow(() -> new ApiException(409, "Chuyến chưa có điểm đón hiện tại."));
+   require(boarding.tripStopId() == input.boardingTripStopId(), 409, "Xe đã đổi điểm dừng. Vui lòng tải lại.");
+   var alighting = stops.stream().filter(stop -> stop.tripStopId() == input.alightingTripStopId()).findFirst()
+       .orElseThrow(() -> new ApiException(400, "Điểm trả không thuộc chuyến."));
+   require(alighting.position() > boarding.position(), 400, "Điểm trả phải sau điểm đón hiện tại.");
+
+   int existing = jdbc.queryForObject("""
+       SELECT COUNT(*) FROM booking
+       WHERE trip_id=? AND walk_in_student_code=? AND status IN ('RESERVED','CHECKED_IN')
+       """, Integer.class, tripId, studentCode);
+   require(existing == 0, 409, "Mã sinh viên này đã được ghi nhận trên chuyến.");
+   var seat = trips.seats(tripId, boarding.position(), alighting.position()).stream()
+       .filter(item -> item.seatId() == input.seatId()).findFirst()
+       .orElseThrow(() -> new ApiException(400, "Ghế không thuộc chuyến xe."));
+   require(seat.status().equals("AVAILABLE"), 409, "Ghế đã có người trên chặng này. Vui lòng chọn ghế khác.");
+   int waitingToAlight = jdbc.queryForObject("""
+       SELECT COUNT(*) FROM booking WHERE trip_id=? AND seat_id=? AND status='CHECKED_IN'
+       AND alighted_at IS NULL AND alighting_position<=?
+       """, Integer.class, tripId, seat.seatId(), currentPosition);
+   require(waitingToAlight == 0, 409, "Xác nhận khách xuống ghế này trước khi thêm khách mới.");
+
+   LocalDateTime boardedAt = now();
+   long bookingId = db.insert("""
+       INSERT INTO booking(code, walk_in_student_code, trip_id, boarding_trip_stop_id, alighting_trip_stop_id,
+           boarding_position, alighting_position, seat_id, status, idempotency_key, reserved_at, checked_in_at)
+       VALUES (?,?,?,?,?,?,?,?,'CHECKED_IN',?,?,?)
+       """, UUID.randomUUID().toString(), studentCode, tripId, boarding.tripStopId(), alighting.tripStopId(),
+       boarding.position(), alighting.position(), seat.seatId(), input.idempotencyKey(), boardedAt, boardedAt);
+   event(user, tripId, bookingId, "WALK_IN", currentPosition);
+   return detail(user, tripId);
  }
  @Transactional
  public Report report(long user,long id,ReportInput input) {

@@ -23,15 +23,16 @@ public class AdminController {
     @PostMapping("/trips/batch") ApiResponse<?> batch(@Valid @RequestBody Contracts.BatchTrips input) { return ApiResponse.ok(service.createBatch(input)); }
     @PostMapping("/users") ApiResponse<?> createUser(@Valid @RequestBody Contracts.NewUser input) { return ApiResponse.ok(users.create(input)); }
     @PutMapping("/trips/{id}/status") ApiResponse<?> status(@PathVariable long id, @Valid @RequestBody Contracts.TripStatus input) { return ApiResponse.ok(service.changeStatus(id,input.status())); }
+    @PutMapping("/trips/{id}/booking-opening") ApiResponse<?> opening(@PathVariable long id,@Valid @RequestBody Contracts.BookingOpeningUpdate input){return ApiResponse.ok(service.changeBookingOpening(id,input));}
     @GetMapping("/users") ApiResponse<?> users(@RequestParam(defaultValue="0") int page, @RequestParam(defaultValue="20") int size) {
         ApiException.require(page>=0 && page<=100000 && size>=1 && size<=100,400,"Phân trang không hợp lệ.");
         long total=jdbc.queryForObject("SELECT COUNT(*) FROM app_user",Long.class);
-        var content=jdbc.query("SELECT * FROM app_user ORDER BY id LIMIT ? OFFSET ?",(rs,n) -> {
+        var content=jdbc.query("SELECT u.*,COALESCE(p.priority_group,'REGULAR') AS booking_group FROM app_user u LEFT JOIN booking_priority p ON p.email=LOWER(u.email) ORDER BY u.id LIMIT ? OFFSET ?",(rs,n) -> {
             var row=new LinkedHashMap<String,Object>();
             row.put("userId",rs.getLong("id")); row.put("username",rs.getString("username")); row.put("email",rs.getString("email"));
             row.put("fullName",rs.getString("full_name")); row.put("role",rs.getString("role")); row.put("status",rs.getString("status"));
             row.put("studentCode",null); row.put("phone",null); row.put("preferredStopId",rs.getObject("preferred_stop_id"));
-            row.put("emailVerified",false); row.put("locked",false); return row;
+            row.put("bookingGroup",rs.getString("booking_group")); row.put("emailVerified",false); row.put("locked",false); return row;
         },size,page*size);
         return ApiResponse.ok(Map.of("content",content,"page",Map.of("size",size,"number",page,"totalElements",total,"totalPages",(total+size-1)/size)));
     }

@@ -75,7 +75,7 @@ public class BookingPlanService {
         Long booking=null;String status=choice.status();
         if(choice.candidate()!=null){
             var c=choice.candidate();var seat=c.seats().stream().filter(s->s.status().equals("AVAILABLE")).findFirst().orElseThrow();
-            var saved=bookings.create(user,new Contracts.NewBooking(c.trip().id(),c.boarding().tripStopId(),c.alighting().tripStopId(),seat.seatId(),"plan-"+plan+"-"+choice.date()));
+            var saved=bookings.createForLecturerPlan(user,plan,new Contracts.NewBooking(c.trip().id(),c.boarding().tripStopId(),c.alighting().tripStopId(),seat.seatId(),"plan-"+plan+"-"+choice.date()));
             booking=saved.bookingId();status=saved.status();
         }
         jdbc.update("UPDATE booking_plan_day SET booking_id=?,status=? WHERE plan_id=? AND travel_date=?",booking,status,plan,choice.date());

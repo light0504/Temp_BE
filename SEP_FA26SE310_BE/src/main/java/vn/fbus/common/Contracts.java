@@ -3,6 +3,7 @@ package vn.fbus.common;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
 
@@ -20,17 +21,28 @@ public final class Contracts {
         Long vehicleId(); String vehicle(); Integer capacity(); Long driverId(); String driver();
         Long busAttendantId(); String busAttendant();
     }
+    public record BookingOpening(@NotNull LocalDateTime staffOpensAt,@NotNull LocalDateTime priorityStudentOpensAt,@NotNull LocalDateTime regularOpensAt) {}
+    public record BookingOpeningLead(@Min(1) @Max(8783) Integer staffHours,
+                                     @Min(1) @Max(8783) Integer priorityStudentHours,
+                                     @Min(1) @Max(8783) Integer regularHours) {}
+    public record BookingOpeningUpdate(@Valid BookingOpening bookingOpening, @Valid BookingOpeningLead bookingOpeningLead) {}
+    public interface TripBooking extends TripVehicle {
+        BookingOpening bookingOpening();
+        BookingOpeningLead bookingOpeningLead();
+    }
     public record NewTrip(@NotNull @Positive Long routeId, @Positive Long vehicleId,
                           @NotNull LocalDate date, @NotNull LocalTime time, @NotNull @Min(1) @Max(6) Integer slot,
                           @Size(max=30) String vehicle, @Min(1) @Max(100) Integer capacity,
                           @Positive Long driverId, @Size(max=150) String driver,
-                          @Positive Long busAttendantId, @Size(max=150) String busAttendant) implements TripVehicle {}
+                          @Positive Long busAttendantId, @Size(max=150) String busAttendant, @Valid BookingOpening bookingOpening,
+                          @Valid BookingOpeningLead bookingOpeningLead) implements TripBooking {}
     public record BatchTrips(@NotNull @Positive Long routeId, @Positive Long vehicleId,
                              @NotNull @Size(min=1,max=90) List<@NotNull LocalDate> dates,
                              @NotNull LocalTime time, @NotNull @Min(1) @Max(6) Integer slot,
                              @Size(max=30) String vehicle, @Min(1) @Max(100) Integer capacity,
                              @Positive Long driverId, @Size(max=150) String driver,
-                             @Positive Long busAttendantId, @Size(max=150) String busAttendant) implements TripVehicle {}
+                             @Positive Long busAttendantId, @Size(max=150) String busAttendant, @Valid BookingOpening bookingOpening,
+                          @Valid BookingOpeningLead bookingOpeningLead) implements TripBooking {}
     public record VehicleInput(@NotBlank @Size(max=30) String licensePlate,
                                @NotNull @Min(1) @Max(100) Integer capacity,
                                @NotNull @Positive Long driverId, @Positive Long busAttendantId,

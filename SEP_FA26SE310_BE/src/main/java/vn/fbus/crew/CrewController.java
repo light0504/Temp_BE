@@ -15,6 +15,11 @@ public class CrewController {
  @GetMapping("/trips/{id}") ApiResponse<?> detail(@AuthenticationPrincipal Identity who,@PathVariable long id){return ApiResponse.ok(service.detail(who.userId(),id));}
  @PutMapping("/trips/{id}/progress") ApiResponse<?> progress(@AuthenticationPrincipal Identity who,@PathVariable long id,@Valid @RequestBody Progress input){return ApiResponse.ok(service.progress(who.userId(),id,input));}
  @PutMapping("/trips/{id}/passengers/{bookingId}") ApiResponse<?> mark(@AuthenticationPrincipal Identity who,@PathVariable long id,@PathVariable long bookingId,@Valid @RequestBody Attendance input){return ApiResponse.ok(service.mark(who.userId(),id,bookingId,input));}
+ @PutMapping("/trips/{id}/walk-in")
+ ApiResponse<Detail> addWalkIn(@AuthenticationPrincipal Identity who, @PathVariable long id,
+                              @Valid @RequestBody WalkIn input) {
+   return ApiResponse.ok(service.addWalkIn(who.userId(), id, input));
+ }
  @GetMapping("/trips/{id}/reports") ApiResponse<?> reports(@AuthenticationPrincipal Identity who,@PathVariable long id){return ApiResponse.ok(service.reports(who.userId(),id));}
  @PostMapping("/trips/{id}/reports") ApiResponse<?> report(@AuthenticationPrincipal Identity who,@PathVariable long id,@Valid @RequestBody ReportInput input){return ApiResponse.ok(service.report(who.userId(),id,input));}
 }
