@@ -16,15 +16,15 @@ public class FleetService {
     @Transactional
     public FleetRepository.Vehicle save(Long id, Contracts.VehicleInput input) {
         jdbc.queryForList("SELECT name FROM operation_lock WHERE name='trip-schedule' FOR UPDATE");
-        repository.validateCrew(input.driverId(),input.busAttendantId());
+        repository.validateDriver(input.driverId());
         String plate=input.licensePlate().replaceAll("\\s+","").toUpperCase(Locale.ROOT);
         require(plate.matches("[A-Z0-9.-]{5,30}"),400,"Biển số không hợp lệ.");
-        if (id==null) id=db.insert("INSERT INTO vehicle(license_plate,capacity,driver_id,bus_attendant_id,status) VALUES (?,?,?,?,?)",
-            plate,input.capacity(),input.driverId(),input.busAttendantId(),input.status());
+        if (id==null) id=db.insert("INSERT INTO vehicle(license_plate,capacity,driver_id,status) VALUES (?,?,?,?)",
+            plate,input.capacity(),input.driverId(),input.status());
         else {
             repository.get(id);
-            jdbc.update("UPDATE vehicle SET license_plate=?,capacity=?,driver_id=?,bus_attendant_id=?,status=? WHERE id=?",
-                plate,input.capacity(),input.driverId(),input.busAttendantId(),input.status(),id);
+            jdbc.update("UPDATE vehicle SET license_plate=?,capacity=?,driver_id=?,status=? WHERE id=?",
+                plate,input.capacity(),input.driverId(),input.status(),id);
         }
         return repository.get(id);
     }

@@ -38,7 +38,7 @@ public class SecurityConfig {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(access -> access.requestMatchers("/api/login", "/api/refresh-token", "/api/health").permitAll()
                 .requestMatchers("/api/admin/**").hasRole("ADMIN").requestMatchers("/api/student/**").hasAnyRole("STUDENT","LECTURER")
-                .requestMatchers("/api/staff/**").hasAnyRole("DRIVER","BUS_ATTENDANT")
+                .requestMatchers("/api/staff/**").hasRole("DRIVER")
                 .requestMatchers("/api/lecturer/**").hasRole("LECTURER")
                 .anyRequest().authenticated())
             .exceptionHandling(errors -> errors.authenticationEntryPoint((req,res,error) -> {

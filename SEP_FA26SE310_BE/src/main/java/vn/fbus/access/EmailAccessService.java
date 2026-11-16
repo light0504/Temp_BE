@@ -14,8 +14,8 @@ public class EmailAccessService {
 
     public Map<String,Object> list(int page, int size) {
         require(page>=0 && page<=100000 && size>=1 && size<=100,400,"Phân trang không hợp lệ.");
-        long total=jdbc.queryForObject("SELECT COUNT(*) FROM email_access",Long.class);
-        var content=jdbc.query("SELECT e.*,a.id AS user_id FROM email_access e LEFT JOIN app_user a ON LOWER(a.email)=e.email ORDER BY e.created_at DESC,e.email LIMIT ? OFFSET ?",(rs,n) -> {
+        long total=jdbc.queryForObject("SELECT COUNT(*) FROM email_access WHERE role IN ('STUDENT','LECTURER','DRIVER')",Long.class);
+        var content=jdbc.query("SELECT e.*,a.id AS user_id FROM email_access e LEFT JOIN app_user a ON LOWER(a.email)=e.email WHERE e.role IN ('STUDENT','LECTURER','DRIVER') ORDER BY e.created_at DESC,e.email LIMIT ? OFFSET ?",(rs,n) -> {
             var row=new LinkedHashMap<String,Object>();
             row.put("email",rs.getString("email")); row.put("fullName",rs.getString("full_name")); row.put("role",rs.getString("role"));
             row.put("createdAt",rs.getObject("created_at",java.time.OffsetDateTime.class).toString()); row.put("userId",rs.getObject("user_id",Long.class));

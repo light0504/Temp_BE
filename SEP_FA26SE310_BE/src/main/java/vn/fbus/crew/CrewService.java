@@ -20,13 +20,10 @@ public class CrewService {
  private LocalDateTime now() { return LocalDateTime.now(clock); }
  private TripRow assigned(long user, long id, boolean lock) {
    var t=trips.trip(id,lock);
-   require(Objects.equals(t.driverId(),user)||Objects.equals(t.busAttendantId(),user),403,"Bạn không được phân công chuyến này.");
+   require(Objects.equals(t.driverId(),user),403,"Bạn không được phân công chuyến này.");
    return t;
  }
  private boolean driver(long user, TripRow t) { return Objects.equals(t.driverId(),user); }
- private boolean attendance(long user, TripRow t) {
-   return Objects.equals(t.busAttendantId(),user) || driver(user,t);
- }
  private Operation operation(long id) {
    return jdbc.query("SELECT execution_status,current_stop_position,started_at,completed_at,in_transit FROM trip WHERE id=?",
     (r,n)->new Operation(r.getString(1),r.getInt(2),r.getObject(3,LocalDateTime.class),r.getObject(4,LocalDateTime.class),r.getBoolean("in_transit")),id).getFirst();
@@ -35,13 +32,13 @@ public class CrewService {
    require(!to.isBefore(from) && !to.isAfter(from.plusDays(92)),400,"Khoảng thời gian tối đa 93 ngày.");
    return trips.assignedTrips(user,from.atStartOfDay()).stream()
      .filter(t->t.departureAt().isBefore(to.plusDays(1).atStartOfDay()))
-     .map(t->new CrewTrip(trips.view(t,0,trips.tripStops(t.id()).size()-1),operation(t.id()),driver(user,t),attendance(user,t))).toList();
+     .map(t->new CrewTrip(trips.view(t,0,trips.tripStops(t.id()).size()-1),operation(t.id()),driver(user,t),driver(user,t))).toList();
  }
  @Transactional(readOnly=true, isolation=org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
  public Detail detail(long user,long id) {
    var t=assigned(user,id,false);
    int lastStop = trips.tripStops(id).size() - 1;
-   return new Detail(trips.view(t, 0, lastStop), operation(id), driver(user, t), attendance(user, t),
+   return new Detail(trips.view(t, 0, lastStop), operation(id), driver(user, t), driver(user, t),
        passengers(id), trips.seats(id, 0, lastStop), now());
  }
  private List<Passenger> passengers(long id) {
@@ -129,7 +126,7 @@ public class CrewService {
  }
  @Transactional
  public Detail mark(long user,long id,long bookingId,Attendance input) {
-   var t=assigned(user,id,true); require(attendance(user,t),403,"Chỉ nhân sự được phân công được điểm danh.");
+   var t=assigned(user,id,true); require(driver(user,t),403,"Chỉ nhân sự được phân công được điểm danh.");
    var p=passengers(id).stream().filter(b->b.bookingId()==bookingId).findFirst().orElseThrow(()->new ApiException(404,"Không tìm thấy đặt chỗ trên chuyến."));
    String desired=switch(input.action()){case "CHECK_IN"->"CHECKED_IN";case "CHECK_OUT"->"ALIGHTED";default->"NO_SHOW";};
    if (p.status().equals(desired)) return detail(user,id);
@@ -154,7 +151,7 @@ public class CrewService {
  @Transactional
  public Detail addWalkIn(long user, long tripId, WalkIn input) {
    var trip = assigned(user, tripId, true);
-   require(attendance(user, trip), 403, "Bạn không có quyền thêm hành khách trên chuyến này.");
+   require(driver(user, trip), 403, "Bạn không có quyền thêm hành khách trên chuyến này.");
    String studentCode = input.studentCode().trim().toUpperCase(Locale.ROOT);
    require(studentCode.matches("[A-Z0-9][A-Z0-9-]{1,29}"), 400, "Mã số sinh viên không hợp lệ.");
 

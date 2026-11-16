@@ -39,15 +39,15 @@ Ngoại trừ ADMIN, tài khoản phải có email và vai trò tương ứng tr
 
 ID ví dụ phải thay bằng ID thật. Ít nhất 2, tối đa 30 điểm dừng không trùng nhau; offset đầu bằng 0, tăng dần, tối đa 1440 phút. Tuyến có hướng; chiều ngược tạo tuyến riêng. `GET /admin/routes` trả mảng `{ routeId, routeCode, name, stops: [{ stopId, stopCode, name, address, offsetMinutes }] }`.
 
-`POST /admin/trips`: `{ routeId, vehicleId: null, vehicle: "51B-123.45", capacity: 45, driver: "Nguyễn Văn A", driverId: null, busAttendant: "", busAttendantId: null, date: "YYYY-MM-DD", time: "HH:mm", slot: 1 }`.
+`POST /admin/trips`: `{ routeId, vehicleId: null, vehicle: "51B-123.45", capacity: 45, driver: "Nguyễn Văn A", driverId: null, date: "YYYY-MM-DD", time: "HH:mm", slot: 1 }`.
 
 `POST /admin/trips/batch`: cùng thông tin xe/nhân sự như tạo một chuyến, thay `date` bằng `dates: ["YYYY-MM-DD", "YYYY-MM-DD"]`. Từ 1 đến 90 ngày khác nhau. Một transaction cho toàn bộ danh sách: ngày không hợp lệ hoặc trùng lịch sẽ rollback cả lần tạo. Response là mảng Trip đã tạo. Nếu mất kết nối, tải lại lịch để đối chiếu trước khi tạo lại.
 
-`vehicleId` tùy chọn. Web cho nhập thủ công; chọn xe có sẵn sẽ điền biển số, số ghế, tài xế và bus attendant vào các ô có thể sửa. Các giá trị gửi lên được lưu riêng cho chuyến, không thay đổi mặc định của xe. Chỉ gửi `vehicleId` vẫn dùng được các mặc định. Nếu đổi biển số, bỏ `vehicleId`; biển số trùng xe đã đăng ký sẽ tự liên kết lại và kiểm tra trạng thái ACTIVE.
+`vehicleId` tùy chọn. Web cho nhập thủ công; chọn xe có sẵn sẽ điền biển số, số ghế, tài xế vào các ô có thể sửa. Các giá trị gửi lên được lưu riêng cho chuyến, không thay đổi mặc định của xe. Chỉ gửi `vehicleId` vẫn dùng được các mặc định. Nếu đổi biển số, bỏ `vehicleId`; biển số trùng xe đã đăng ký sẽ tự liên kết lại và kiểm tra trạng thái ACTIVE.
 
-Biển số bắt buộc, chuẩn hóa chữ hoa và bỏ khoảng trắng, 5–30 ký tự chữ/số/dấu chấm/gạch ngang. Số ghế 1–100, tài xế bắt buộc, bus attendant tùy chọn. Có ID nhân sự thì kiểm tra đúng role/ACTIVE và dùng tên tài khoản; chỉ nhập tên trùng duy nhất một tài khoản đúng role thì tự liên kết ID. Tên trùng nhiều tài khoản phải chọn từ gợi ý. Tên nhập mới chưa có tài khoản được lưu với ID null; chuyến đó không xuất hiện trong phân công của một tài khoản nhân sự. Gửi `busAttendant: ""` và `busAttendantId: null` để bỏ attendant mặc định.
+Biển số bắt buộc, chuẩn hóa chữ hoa và bỏ khoảng trắng, 5–30 ký tự chữ/số/dấu chấm/gạch ngang. Số ghế 1–100, tài xế bắt buộc. Có ID nhân sự thì kiểm tra đúng role/ACTIVE và dùng tên tài khoản; chỉ nhập tên trùng duy nhất một tài khoản đúng role thì tự liên kết ID. Tên trùng nhiều tài khoản phải chọn từ gợi ý. Tên nhập mới chưa có tài khoản được lưu với ID null; chuyến đó không xuất hiện trong lịch phân công.
 
-Giờ khởi hành phải ở tương lai theo giờ Việt Nam. Slot 1–6. Không trùng khoảng thời gian của xe, tài xế hoặc bus attendant theo ID; khi chưa có ID kiểm tra biển số/tên. Điểm dừng, nhân sự và sức chứa là snapshot tại thời điểm tạo; ghế tự tạo (`1A`, `1B`, ...). Mỗi hàng thường có 4 ghế (2–2, có lối đi); khi sức chứa chia 4 dư 1 và có ít nhất 5 ghế, hàng cuối có 5 ghế liền nhau. Ví dụ 45 ghế = 10 hàng × 4 + hàng cuối `11A`–`11E`; 49 ghế = 11 hàng × 4 + 5. Các sức chứa khác giữ đủ số ghế đã nhập, hàng cuối dùng phần còn lại (1–4). Mã và ID ghế của chuyến đã tạo được giữ nguyên.
+Giờ khởi hành phải ở tương lai theo giờ Việt Nam. Slot 1–6. Không trùng khoảng thời gian của xe, tài xế theo ID; khi chưa có ID kiểm tra biển số/tên. Điểm dừng, nhân sự và sức chứa là snapshot tại thời điểm tạo; ghế tự tạo (`1A`, `1B`, ...). Mỗi hàng thường có 4 ghế (2–2, có lối đi); khi sức chứa chia 4 dư 1 và có ít nhất 5 ghế, hàng cuối có 5 ghế liền nhau. Ví dụ 45 ghế = 10 hàng × 4 + hàng cuối `11A`–`11E`; 49 ghế = 11 hàng × 4 + 5. Các sức chứa khác giữ đủ số ghế đã nhập, hàng cuối dùng phần còn lại (1–4). Mã và ID ghế của chuyến đã tạo được giữ nguyên.
 
 `GET /admin/trips` trả mảng Trip (bên dưới). `booked` là số chỗ đang giữ cao nhất trên các chặng của chuyến, không phải tổng lịch sử booking. `PUT /admin/trips/{id}/status`: `{ "status": "SCHEDULED" }` hoặc `PAUSED`. Tạm dừng chặn đặt mới, không tự hủy các chỗ đang giữ. Xe và tài xế vẫn được giữ lịch khi chuyến tạm dừng.
 
@@ -64,7 +64,7 @@ Trip response:
 ```text
 { tripId, tripCode, routeId, routeName, date, time, arrivalTime, slot,
   vehicle, driver, capacity, booked, status, availableSeats,
-  vehicleId, driverId, busAttendantId, busAttendant,
+  vehicleId, driverId,
   stops: [{ tripStopId, stopId, name, position, arrivalAt }] }
 ```
 
@@ -97,13 +97,13 @@ Response data booking và `GET /student/bookings/my`:
 
 ## Tài khoản, xe và nhân sự
 
-`POST /admin/users`: `{ username, email, fullName, password, role }`. Admin tạo các role `STUDENT`, `LECTURER`, `DRIVER`, `BUS_ATTENDANT`. Username 3–100 ký tự chữ/số/`_.-`; password ít nhất 8 ký tự, tối đa 72 byte UTF-8. Mật khẩu lưu BCrypt. Username/email được chuẩn hóa chữ thường và kiểm tra trùng. Response không chứa password hoặc hash.
+`POST /admin/users`: `{ username, email, fullName, password, role }`. Admin tạo các role `STUDENT`, `LECTURER`, `DRIVER`. Username 3–100 ký tự chữ/số/`_.-`; password ít nhất 8 ký tự, tối đa 72 byte UTF-8. Mật khẩu lưu BCrypt. Username/email được chuẩn hóa chữ thường và kiểm tra trùng. Response không chứa password hoặc hash.
 
-`GET /admin/staff` trả danh sách tài khoản đang hoạt động thuộc DRIVER/BUS_ATTENDANT: `[{ userId, fullName, email, role }]`.
+`GET /admin/staff` trả danh sách tài khoản đang hoạt động thuộc DRIVER: `[{ userId, fullName, email, role }]`.
 
-`GET /admin/vehicles` trả `[{ vehicleId, licensePlate, capacity, driverId, driverName, busAttendantId, busAttendantName, status }]`.
+`GET /admin/vehicles` trả `[{ vehicleId, licensePlate, capacity, driverId, driverName, status }]`.
 
-`POST /admin/vehicles` và `PUT /admin/vehicles/{id}` dùng body `{ licensePlate, capacity, driverId, busAttendantId: null, status: "ACTIVE" }`. Biển số là tên hiển thị mặc định, chuẩn hóa chữ hoa và bỏ khoảng trắng; phải duy nhất. Số ghế 1–100; driver bắt buộc, attendant tùy chọn; kiểm tra đúng role và tài khoản đang hoạt động. Status nhận `ACTIVE` hoặc `INACTIVE`.
+`POST /admin/vehicles` và `PUT /admin/vehicles/{id}` dùng body `{ licensePlate, capacity, driverId, status: "ACTIVE" }`. Biển số là tên hiển thị mặc định, chuẩn hóa chữ hoa và bỏ khoảng trắng; phải duy nhất. Số ghế 1–100; driver bắt buộc, attendant tùy chọn; kiểm tra đúng role và tài khoản đang hoạt động. Status nhận `ACTIVE` hoặc `INACTIVE`.
 
 Sửa mặc định của xe chỉ ảnh hưởng chuyến được tạo sau đó; các chuyến cũ giữ snapshot nhân sự và ghế. API không xóa xe/tài khoản đang được tham chiếu. Xe ngừng sử dụng không tạo được chuyến mới, các chuyến cũ không tự tạm dừng.
 
@@ -115,7 +115,7 @@ Sửa mặc định của xe chỉ ảnh hưởng chuyến được tạo sau đ
 - `GET /admin/email-access/template`: tải `fbus-email-template.xlsx` (binary, không có envelope), cần Bearer token. Sheet `Emails` có tiêu đề ở dòng 1: `Email`, `Họ tên`, `Vai trò`; sheet `Hướng dẫn` nêu quy định. File trống, không chứa email ví dụ để tránh nhập nhầm; Vai trò có danh sách chọn.
 - `POST /admin/email-access/import`: multipart/form-data, trường `file`; không tự đặt boundary trong client. Nhận `.xlsx` và `.xls`, tối đa 2 MB / 2.000 dòng. Đọc sheet `Emails`, hoặc sheet đầu nếu không có tên này. Header bắt buộc ở dòng 1; hỗ trợ tên cột `Email`, `Họ tên`/`fullName`, `Vai trò`/`role`. Không nhận công thức, ô không phải văn bản, cột lạ hoặc dữ liệu ngoài cột khai báo. Giữ cơ chế bảo vệ ZIP và giới hạn kích thước entry giải nén 32 MB của POI.
 
-Email bắt buộc, tối đa 254 ký tự, chuẩn hóa chữ thường và bỏ khoảng trắng hai đầu. Họ tên tùy chọn, tối đa 150 ký tự. Vai trò tùy chọn, mặc định `STUDENT`; nhận `STUDENT`, `LECTURER`, `DRIVER`, `BUS_ATTENDANT`, không cấp ADMIN qua Excel.
+Email bắt buộc, tối đa 254 ký tự, chuẩn hóa chữ thường và bỏ khoảng trắng hai đầu. Họ tên tùy chọn, tối đa 150 ký tự. Vai trò tùy chọn, mặc định `STUDENT`; nhận `STUDENT`, `LECTURER`, `DRIVER`, không cấp ADMIN qua Excel.
 
 Response envelope data: `{ totalRows, imported, skipped, failed, errors: [{ row, email, message }] }`. `row` là số dòng Excel (bắt đầu 2); bỏ qua dòng trống. Các dòng hợp lệ được thêm, dòng lỗi trả trong `errors`, kể cả khi không thêm được dòng nào. Email trùng (trong tệp hoặc database) cùng vai trò bị bỏ qua; khác vai trò bị báo lỗi. Không cập nhật tên/vai trò/trạng thái của tài khoản hoặc email đã có. Import nối thêm, không xóa email vắng mặt trong tệp. Gửi lại sau lỗi mạng không tạo email trùng.
 
@@ -184,15 +184,15 @@ Khóa chung trip-schedule chống xung đột với tạo chuyến/xe khác. T�
 Migration V6 bổ sung trip_recurrence, trip_recurrence_day và liên kết wishlist với ngày của booking_plan; không sửa checksum migration cũ.
 
 
-## Vận hành chuyến (DRIVER / BUS_ATTENDANT)
+## Vận hành chuyến (DRIVER)
 
-Migration V7 bổ sung tiến trình trên trip, mốc xuống xe/lý do hủy trên booking, nhật ký crew_event và trip_report. Không thay bookingId/seatId hoặc xóa dữ liệu cũ. Các API yêu cầu nhân sự được phân công bằng driver_id/bus_attendant_id, không xác thực dựa trên tên nhập tự do.
+Migration V7 bổ sung tiến trình trên trip, mốc xuống xe/lý do hủy trên booking, nhật ký crew_event và trip_report. Không thay bookingId/seatId hoặc xóa dữ liệu cũ. Các API yêu cầu nhân sự được phân công bằng driver_id, không xác thực dựa trên tên nhập tự do.
 
 - GET /staff/schedule?from=YYYY-MM-DD&to=YYYY-MM-DD: mặc định hôm nay tới 30 ngày sau; tối đa 93 ngày. Mỗi phần tử {trip,operation,canDrive,canManagePassengers}. Có thể chọn khoảng quá khứ để xem lịch sử.
 - GET /staff/trips/{id}: {trip,operation,canDrive,canManagePassengers,passengers}. operation: {status: READY|IN_PROGRESS|COMPLETED,currentStopPosition,startedAt,completedAt}. Chưa bắt đầu có position=-1. passengers gồm bookingId/code, họ tên/email, mã ghế, điểm đón/trả và vị trí, trạng thái RESERVED|CHECKED_IN|ALIGHTED|NO_SHOW|CANCELLED, checkedInAt,alightedAt.
 - PUT /staff/trips/{id}/progress nhận {action:START|DEPART|ARRIVE|COMPLETE,expectedPosition}. Chỉ tài xế được cập nhật tiến trình. START xác nhận đến điểm đầu trong ngày, từ 30 phút trước giờ khởi hành. DEPART yêu cầu đã xử lý khách đón/trả tại bến và đặt operation.inTransit=true. ARRIVE xác nhận đến điểm kế tiếp từ 15 phút trước giờ dự kiến và đặt inTransit=false. COMPLETE yêu cầu đã đến điểm cuối và hoàn tất điểm danh.
 - Trong lúc di chuyển, currentStopPosition giữ vị trí bến vừa rời. Điểm danh và thêm khách tại bến chỉ thực hiện khi xe đã đến bến. API giữ thứ tự các bước khi gửi lại yêu cầu.
-- PUT /staff/trips/{id}/passengers/{bookingId}: {action:CHECK_IN|CHECK_OUT|NO_SHOW}. Tài xế và phụ xe được phân công đều có quyền điểm danh. Chuyến phải IN_PROGRESS và không PAUSED. CHECK_IN/NO_SHOW chỉ ở đúng điểm đón, CHECK_OUT chỉ ở đúng điểm trả và đã CHECKED_IN. NO_SHOW chỉ từ giờ đón dự kiến, chuyển booking thành CANCELLED với cancellationReason=NO_SHOW để trả ghế. Không tự chuyển ghế cho wishlist. Các thao tác khóa trip để đồng bộ với đặt/hủy ghế và lưu actor/action/time vào crew_event.
+- PUT /staff/trips/{id}/passengers/{bookingId}: {action:CHECK_IN|CHECK_OUT|NO_SHOW}. Tài xế được phân công có quyền điểm danh. Chuyến phải IN_PROGRESS và không PAUSED. CHECK_IN/NO_SHOW chỉ ở đúng điểm đón, CHECK_OUT chỉ ở đúng điểm trả và đã CHECKED_IN. NO_SHOW chỉ từ giờ đón dự kiến, chuyển booking thành CANCELLED với cancellationReason=NO_SHOW để trả ghế. Không tự chuyển ghế cho wishlist. Các thao tác khóa trip để đồng bộ với đặt/hủy ghế và lưu actor/action/time vào crew_event.
 
 GET /student/bookings/my trả thêm cancellationReason (NO_SHOW hoặc null) và alightedAt; mobile hiển thị Vắng mặt/Đã xuống xe tương ứng. Chuyến COMPLETED và điểm đón đã đi qua không nhận đặt chỗ mới, kể cả tìm chuyến/lịch dài hạn. Admin không đổi SCHEDULED/PAUSED sau khi chuyến đã bắt đầu.
 
@@ -215,9 +215,9 @@ V8 tạo booking_checkin_qr: mỗi booking có một generation, session_id và 
 - POST /staff/trips/{id}/check-in-qr/preview: {qrCode}. Yêu cầu quyền điểm danh trên đúng chuyến, chữ ký hợp lệ, generation hiện tại, chưa hết hạn, phiên người mở mã chưa đăng xuất/hết hạn. Trả {bookingId,fullName,email,seatCode,boardingStop,alightingStop,alreadyCheckedIn,serverTime,expiresAt} cho nhân sự đối chiếu. Preview không điểm danh và không gia hạn mã.
 - POST /staff/trips/{id}/check-in-qr: {qrCode}, sau xác nhận đúng hành khách. Xác minh lại toàn bộ mã và điều kiện điểm danh tại thời điểm xác nhận; mã hết hạn sau preview bị từ chối. Trả {bookingId,fullName,seatCode,alreadyCheckedIn,detail}. Dùng CrewService.mark hiện tại, khóa trip và ghi CHECK_IN vào crew_event. Cùng mã còn hạn quét lại trả alreadyCheckedIn=true, không thêm event hoặc đổi giờ điểm danh.
 
-Chuyến cần IN_PROGRESS, không PAUSED, và đang ở đúng điểm đón. Đặt chỗ đã hủy/vắng mặt/xuống xe không check-in được. Tài xế và phụ xe được phân công đều có quyền quét QR, kể cả khi chuyến có cả hai. Các API QR trả Cache-Control: no-store. Thời gian và xác thực do backend quyết định, không tin đếm ngược/bookingId do client tự gửi. Mã sai định dạng/chữ ký trả 400; sai quyền 403; không phải chủ booking 404; hết hạn/sai chuyến/điểm hoặc trạng thái 409.
+Chuyến cần IN_PROGRESS, không PAUSED, và đang ở đúng điểm đón. Đặt chỗ đã hủy/vắng mặt/xuống xe không check-in được. Tài xế được phân công có quyền quét QR. Các API QR trả Cache-Control: no-store. Thời gian và xác thực do backend quyết định, không tin đếm ngược/bookingId do client tự gửi. Mã sai định dạng/chữ ký trả 400; sai quyền 403; không phải chủ booking 404; hết hạn/sai chuyến/điểm hoặc trạng thái 409.
 
-Mobile sinh hình QR cục bộ bằng react-native-qrcode-svg, không gửi token sang dịch vụ tạo ảnh bên ngoài. Đếm ngược theo thời gian server, trừ thời gian truyền và dùng đồng hồ monotonic; QR hết hạn bị ẩn, không giữ ảnh cũ khi mất mạng. Tự đổi mỗi 30 giây khi trang mở, dừng khi ứng dụng ra nền hoặc booking không RESERVED. Chặn screen capture bằng expo-screen-capture trên thiết bị hỗ trợ. Biện pháp này hạn chế ảnh cũ/chia sẻ màn hình, không chứng minh danh tính vật lý hoặc chặn ảnh chụp bằng thiết bị khác trong 30 giây; phụ xe phải đối chiếu tên/email với người lên xe. Chưa có ảnh chân dung hoặc nhận diện khuôn mặt.
+Mobile sinh hình QR cục bộ bằng react-native-qrcode-svg, không gửi token sang dịch vụ tạo ảnh bên ngoài. Đếm ngược theo thời gian server, trừ thời gian truyền và dùng đồng hồ monotonic; QR hết hạn bị ẩn, không giữ ảnh cũ khi mất mạng. Tự đổi mỗi 30 giây khi trang mở, dừng khi ứng dụng ra nền hoặc booking không RESERVED. Chặn screen capture bằng expo-screen-capture trên thiết bị hỗ trợ. Biện pháp này hạn chế ảnh cũ/chia sẻ màn hình, không chứng minh danh tính vật lý hoặc chặn ảnh chụp bằng thiết bị khác trong 30 giây; tài xế phải đối chiếu tên/email với người lên xe. Chưa có ảnh chân dung hoặc nhận diện khuôn mặt.
 
 
 ## Ưu tiên mở đặt chỗ (V9)
@@ -245,3 +245,7 @@ POST /student/bookings: kiểm tra giờ mở trong transaction sau khi khóa tr
 ### Ngoại lệ giảng viên đặt theo kỳ
 
 POST /lecturer/booking-plans/preview, POST /lecturer/booking-plans và PUT /lecturer/booking-plans/{id}/retry giữ khả năng đặt dài hạn như trước, không bị chặn bởi bookingOpening. Ngày nào đã có chuyến còn ghế sẽ được đặt dù các nhóm chưa tới giờ mở. Chỉ role LECTURER và lịch ACTIVE thuộc chính user được đi qua BookingService.createForLecturerPlan; endpoint đặt lẻ không có cờ bỏ qua giờ mở từ client. Giảng viên đặt từng chuyến vẫn theo mốc của nhóm email. Tất cả điều kiện ghế trống/chặng, tương lai, trạng thái chuyến, idempotency và giới hạn 90 ngày của lịch dài hạn vẫn áp dụng; không đặt vượt sức chứa, không tự tạo chuyến. Không có tác vụ tự đặt bổ sung sau này.
+
+## Hai ứng dụng mobile
+
+Fbus Passenger dành cho STUDENT và LECTURER. Fbus Driver dành cho DRIVER. Vai trò cũ đã ngừng đăng nhập, refresh và truy cập API. Các bản ghi tài khoản, phân công và báo cáo cũ được giữ để tra cứu. Các API xe và chuyến hiện chỉ phân công tài xế.

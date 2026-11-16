@@ -26,8 +26,8 @@ public class AdminController {
     @PutMapping("/trips/{id}/booking-opening") ApiResponse<?> opening(@PathVariable long id,@Valid @RequestBody Contracts.BookingOpeningUpdate input){return ApiResponse.ok(service.changeBookingOpening(id,input));}
     @GetMapping("/users") ApiResponse<?> users(@RequestParam(defaultValue="0") int page, @RequestParam(defaultValue="20") int size) {
         ApiException.require(page>=0 && page<=100000 && size>=1 && size<=100,400,"Phân trang không hợp lệ.");
-        long total=jdbc.queryForObject("SELECT COUNT(*) FROM app_user",Long.class);
-        var content=jdbc.query("SELECT u.*,COALESCE(p.priority_group,'REGULAR') AS booking_group FROM app_user u LEFT JOIN booking_priority p ON p.email=LOWER(u.email) ORDER BY u.id LIMIT ? OFFSET ?",(rs,n) -> {
+        long total=jdbc.queryForObject("SELECT COUNT(*) FROM app_user WHERE role IN ('ADMIN','STUDENT','LECTURER','DRIVER')",Long.class);
+        var content=jdbc.query("SELECT u.*,COALESCE(p.priority_group,'REGULAR') AS booking_group FROM app_user u LEFT JOIN booking_priority p ON p.email=LOWER(u.email) WHERE u.role IN ('ADMIN','STUDENT','LECTURER','DRIVER') ORDER BY u.id LIMIT ? OFFSET ?",(rs,n) -> {
             var row=new LinkedHashMap<String,Object>();
             row.put("userId",rs.getLong("id")); row.put("username",rs.getString("username")); row.put("email",rs.getString("email"));
             row.put("fullName",rs.getString("full_name")); row.put("role",rs.getString("role")); row.put("status",rs.getString("status"));

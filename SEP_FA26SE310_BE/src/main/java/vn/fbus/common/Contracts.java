@@ -19,7 +19,6 @@ public final class Contracts {
                            @NotNull @Size(min=2,max=30) List<@NotNull @Valid RoutePoint> stops) {}
     public interface TripVehicle {
         Long vehicleId(); String vehicle(); Integer capacity(); Long driverId(); String driver();
-        Long busAttendantId(); String busAttendant();
     }
     public record BookingOpening(@NotNull LocalDateTime staffOpensAt,@NotNull LocalDateTime priorityStudentOpensAt,@NotNull LocalDateTime regularOpensAt) {}
     public record BookingOpeningLead(@Min(1) @Max(8783) Integer staffHours,
@@ -34,24 +33,24 @@ public final class Contracts {
                           @NotNull LocalDate date, @NotNull LocalTime time, @NotNull @Min(1) @Max(6) Integer slot,
                           @Size(max=30) String vehicle, @Min(1) @Max(100) Integer capacity,
                           @Positive Long driverId, @Size(max=150) String driver,
-                          @Positive Long busAttendantId, @Size(max=150) String busAttendant, @Valid BookingOpening bookingOpening,
+                          @Valid BookingOpening bookingOpening,
                           @Valid BookingOpeningLead bookingOpeningLead) implements TripBooking {}
     public record BatchTrips(@NotNull @Positive Long routeId, @Positive Long vehicleId,
                              @NotNull @Size(min=1,max=90) List<@NotNull LocalDate> dates,
                              @NotNull LocalTime time, @NotNull @Min(1) @Max(6) Integer slot,
                              @Size(max=30) String vehicle, @Min(1) @Max(100) Integer capacity,
                              @Positive Long driverId, @Size(max=150) String driver,
-                             @Positive Long busAttendantId, @Size(max=150) String busAttendant, @Valid BookingOpening bookingOpening,
+                             @Valid BookingOpening bookingOpening,
                           @Valid BookingOpeningLead bookingOpeningLead) implements TripBooking {}
     public record VehicleInput(@NotBlank @Size(max=30) String licensePlate,
                                @NotNull @Min(1) @Max(100) Integer capacity,
-                               @NotNull @Positive Long driverId, @Positive Long busAttendantId,
+                               @NotNull @Positive Long driverId,
                                @NotNull @Pattern(regexp="ACTIVE|INACTIVE") String status) {}
     public record NewUser(@NotBlank @Pattern(regexp="[A-Za-z0-9_.-]{3,100}") String username,
                           @NotBlank @Email @Size(max=254) String email,
                           @NotBlank @Size(min=8,max=72) String password,
                           @NotBlank @Size(max=150) String fullName,
-                          @NotNull @Pattern(regexp="STUDENT|DRIVER|BUS_ATTENDANT|LECTURER") String role) {}
+                          @NotNull @Pattern(regexp="STUDENT|DRIVER|LECTURER") String role) {}
     public record TripStatus(@NotNull @Pattern(regexp="SCHEDULED|PAUSED") String status) {}
     public record NewBooking(@NotNull @Positive Long tripId, @NotNull @Positive Long boardingTripStopId,
                              @NotNull @Positive Long alightingTripStopId, @NotNull @Positive Long seatId,

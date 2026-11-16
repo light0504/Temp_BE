@@ -68,17 +68,12 @@ public class TransportService {
         if (vehicle.driverId()!=null) { sql+=" OR driver_id=? OR (driver_id IS NULL AND LOWER(TRIM(driver))=LOWER(?))"; params.add(vehicle.driverId()); }
         else sql+=" OR LOWER(TRIM(driver))=LOWER(?)";
         params.add(vehicle.driverName());
-        if (vehicle.busAttendantName()!=null) {
-            if (vehicle.busAttendantId()!=null) { sql+=" OR bus_attendant_id=? OR (bus_attendant_id IS NULL AND LOWER(TRIM(bus_attendant))=LOWER(?))"; params.add(vehicle.busAttendantId()); }
-            else sql+=" OR LOWER(TRIM(bus_attendant))=LOWER(?)";
-            params.add(vehicle.busAttendantName());
-        }
         sql+=") AND departure_at<? AND arrival_at>?"; params.add(arrival); params.add(departure);
         int conflicts=jdbc.queryForObject(sql,Integer.class,params.toArray());
-        require(conflicts==0,409,"Trùng lịch xe, tài xế hoặc bus attendant ngày "+date+". Chưa tạo chuyến nào trong lần lưu này.");
+        require(conflicts==0,409,"Trùng lịch xe hoặc tài xế ngày "+date+". Chưa tạo chuyến nào trong lần lưu này.");
         String code = route.routeCode()+"-"+UUID.randomUUID().toString().substring(0,8);
-        long id = db.insert("INSERT INTO trip(code,route_id,departure_at,arrival_at,slot,vehicle,driver,capacity,vehicle_id,driver_id,bus_attendant_id,bus_attendant,staff_booking_opens_at,priority_student_booking_opens_at,regular_booking_opens_at,staff_booking_lead_hours,priority_student_booking_lead_hours,regular_booking_lead_hours) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            code,route.routeId(),departure,arrival,slot,vehicle.licensePlate(),vehicle.driverName(),vehicle.capacity(),vehicle.vehicleId(),vehicle.driverId(),vehicle.busAttendantId(),vehicle.busAttendantName(),opening==null?null:opening.staffOpensAt(),opening==null?null:opening.priorityStudentOpensAt(),opening==null?null:opening.regularOpensAt(),
+        long id = db.insert("INSERT INTO trip(code,route_id,departure_at,arrival_at,slot,vehicle,driver,capacity,vehicle_id,driver_id,staff_booking_opens_at,priority_student_booking_opens_at,regular_booking_opens_at,staff_booking_lead_hours,priority_student_booking_lead_hours,regular_booking_lead_hours) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            code,route.routeId(),departure,arrival,slot,vehicle.licensePlate(),vehicle.driverName(),vehicle.capacity(),vehicle.vehicleId(),vehicle.driverId(),opening==null?null:opening.staffOpensAt(),opening==null?null:opening.priorityStudentOpensAt(),opening==null?null:opening.regularOpensAt(),
             lead==null?null:lead.staffHours(),lead==null?null:lead.priorityStudentHours(),lead==null?null:lead.regularHours());
         for (int i=0; i<route.stops().size(); i++) {
             var point=route.stops().get(i);

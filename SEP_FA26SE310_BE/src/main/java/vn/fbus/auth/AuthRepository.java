@@ -22,6 +22,7 @@ public class AuthRepository {
     }
     public Optional<User> findUser(long id) { return jdbc.query("SELECT * FROM app_user WHERE id=?", users, id).stream().findFirst(); }
     public boolean emailAllowed(User user) {
+        if (!java.util.Set.of("ADMIN", "STUDENT", "LECTURER", "DRIVER").contains(user.role())) return false;
         return user.role().equals("ADMIN") || jdbc.queryForObject("SELECT COUNT(*) FROM email_access WHERE email=? AND role=?",Integer.class,user.email().trim().toLowerCase(java.util.Locale.ROOT),user.role())==1;
     }
     public Optional<Session> findSession(String id) { return jdbc.query("SELECT * FROM auth_session WHERE id=?", sessions, id).stream().findFirst(); }

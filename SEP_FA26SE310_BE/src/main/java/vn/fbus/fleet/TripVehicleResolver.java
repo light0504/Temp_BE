@@ -8,8 +8,7 @@ import static vn.fbus.common.ApiException.require;
 
 @Component
 public class TripVehicleResolver {
-    public record Assignment(Long vehicleId, String licensePlate, int capacity, Long driverId, String driverName,
-                             Long busAttendantId, String busAttendantName) {}
+    public record Assignment(Long vehicleId, String licensePlate, int capacity, Long driverId, String driverName) {}
     private record Person(Long id, String name, String status) {}
     private final FleetRepository fleet;
     private final JdbcTemplate jdbc;
@@ -27,25 +26,21 @@ public class TripVehicleResolver {
         require(capacity!=null && capacity>=1 && capacity<=100,400,"Số ghế phải từ 1 đến 100.");
         Long driverId=input.driverId(); String driverName=input.driver();
         if (driverId==null && driverName==null && selected!=null) driverId=selected.driverId();
-        var driver=person(driverId,driverName,"DRIVER",true);
-        Long attendantId=input.busAttendantId(); String attendantName=input.busAttendant();
-        if (attendantId==null && attendantName==null && selected!=null) attendantId=selected.busAttendantId();
-        var attendant=person(attendantId,attendantName,"BUS_ATTENDANT",false);
-        return new Assignment(selected==null ? null : selected.vehicleId(),plate,capacity,driver.id(),driver.name(),attendant.id(),attendant.name());
+        var driver=driver(driverId,driverName);
+        return new Assignment(selected==null ? null : selected.vehicleId(),plate,capacity,driver.id(),driver.name());
     }
-    private Person person(Long id, String name, String role, boolean required) {
-        String label=role.equals("DRIVER") ? "Tài xế" : "Bus attendant";
+    private Person driver(Long id, String name) {
+        String label="Tài xế";
         if (id!=null) {
             var found=jdbc.query("SELECT id,full_name,status FROM app_user WHERE id=? AND role=?",
-                (rs,n) -> new Person(rs.getLong("id"),rs.getString("full_name"),rs.getString("status")),id,role);
+                (rs,n) -> new Person(rs.getLong("id"),rs.getString("full_name"),rs.getString("status")),id,"DRIVER");
             require(found.size()==1 && found.getFirst().status().equals("ACTIVE"),400,label+" không hợp lệ.");
             return found.getFirst();
         }
         String trimmed=name==null ? "" : name.trim();
-        require(!required || !trimmed.isEmpty(),400,"Vui lòng nhập tài xế.");
-        if (trimmed.isEmpty()) return new Person(null,null,"ACTIVE");
+        require(!trimmed.isEmpty(),400,"Vui lòng nhập tài xế.");
         var matches=jdbc.query("SELECT id,full_name,status FROM app_user WHERE role=? AND LOWER(TRIM(full_name))=?",
-            (rs,n) -> new Person(rs.getLong("id"),rs.getString("full_name"),rs.getString("status")),role,trimmed.toLowerCase(Locale.ROOT));
+            (rs,n) -> new Person(rs.getLong("id"),rs.getString("full_name"),rs.getString("status")),"DRIVER",trimmed.toLowerCase(Locale.ROOT));
         require(matches.size()<=1,400,label+" trùng tên. Chọn tài khoản từ danh sách gợi ý.");
         if (!matches.isEmpty()) {
             require(matches.getFirst().status().equals("ACTIVE"),400,label+" không hoạt động.");

@@ -27,7 +27,6 @@ Profile mặc định **dev** tạo các tài khoản sau nếu chưa có:
 | ADMIN | `admin` / `admin@example.com` | `Admin@12345` |
 | STUDENT | `student` / `student@example.com` | `Student@12345` |
 | DRIVER | `driver` / `driver@example.com` | `Driver@12345` |
-| BUS_ATTENDANT | `attendant` / `attendant@example.com` | `Attendant@12345` |
 | LECTURER | `lecturer` / `lecturer@example.com` | `Lecturer@12345` |
 
 Đây là tài khoản phát triển. Không bật profile `dev` khi triển khai công khai. Profile khác yêu cầu `JWT_SECRET` tối thiểu 32 byte và không tự tạo tài khoản; phải cấp tài khoản quản trị với mật khẩu BCrypt qua quy trình quản trị database trước khi sử dụng.
@@ -71,10 +70,10 @@ Khi chạy BE bằng Docker hoặc Spring Boot, hãy để Flyway tự tạo sch
 1. Đăng nhập web bằng tài khoản admin.
 2. **Tuyến & điểm dừng → Thêm điểm dừng**: tạo FU HCM, FU Tân Uyên và các điểm trung gian nếu cần.
 3. **Tạo tuyến**: chọn các điểm theo thứ tự, nhập số phút tính từ điểm đầu. Điểm đầu là 0, các điểm sau tăng dần. Chiều ngược lại được tạo thành một tuyến riêng.
-4. **Người dùng → Tạo tài khoản**: tạo tài xế, bus attendant hoặc giảng viên. **Quản lý xe → Thêm xe**: nhập biển số, số ghế, tài xế mặc định và bus attendant (tùy chọn).
-5. **Quản lý chuyến xe → Tạo chuyến**: chọn tuyến, nhập biển số/số ghế/tài xế/bus attendant, giờ, slot 1–6 và một hoặc nhiều ngày trên lịch (tối đa 90). Có thể chọn xe đã đăng ký để điền thông tin vào các ô rồi chỉnh lại. Nếu một ngày bị trùng lịch xe/tài xế/bus attendant hoặc giờ đã qua, toàn bộ lần tạo bị từ chối. Trang quản lý hiển thị lịch tuần T2–CN, mỗi ô là số chuyến của một slot; bấm ô để xem chi tiết và tạm dừng/mở chuyến.
+4. **Người dùng → Tạo tài khoản**: tạo tài xế hoặc giảng viên. **Quản lý xe → Thêm xe**: nhập biển số, số ghế, tài xế mặc định.
+5. **Quản lý chuyến xe → Tạo chuyến**: chọn tuyến, nhập biển số/số ghế/tài xế, giờ, slot 1–6 và một hoặc nhiều ngày trên lịch (tối đa 90). Có thể chọn xe đã đăng ký để điền thông tin vào các ô rồi chỉnh lại. Nếu một ngày bị trùng lịch xe/tài xế hoặc giờ đã qua, toàn bộ lần tạo bị từ chối. Trang quản lý hiển thị lịch tuần T2–CN, mỗi ô là số chuyến của một slot; bấm ô để xem chi tiết và tạm dừng/mở chuyến.
 6. Student hoặc lecturer đăng nhập mobile để tìm chuyến, chọn ghế, đặt/hủy chỗ và xem lịch sử.
-7. Driver/bus attendant đăng nhập mobile để xem các chuyến được phân công từ hôm nay, theo ID tài khoản được gắn trên chuyến.
+7. Driver đăng nhập mobile để xem các chuyến được phân công từ hôm nay, theo ID tài khoản được gắn trên chuyến.
 8. **Người dùng → Email được phép**: tải mẫu Excel, điền email từ dòng 2 rồi chọn **Nhập Excel**. Chỉ Email bắt buộc; Họ tên và Vai trò tùy chọn (mặc định STUDENT). Nhận .xlsx/.xls tối đa 2 MB / 2.000 dòng; trả số dòng thêm, trùng và lỗi. Nhập nối thêm, không sửa quyền hay xóa dữ liệu cũ. Danh sách cấp quyền không tạo tài khoản/mật khẩu; Google OAuth chưa tích hợp.
 
 Mỗi chuyến lưu snapshot biển số, số ghế, nhân sự và ID tương ứng tại thời điểm tạo. Chỉnh thông tin trong form chuyến không sửa mặc định của xe. Sửa xe/nhân sự mặc định không sửa các chuyến đã tạo hoặc sơ đồ ghế đã có đặt chỗ. Ngừng sử dụng xe chặn tạo chuyến mới; muốn ngừng nhận đặt chỗ ở chuyến cũ cần tạm dừng chuyến đó. Nhân sự nhập thủ công được liên kết tài khoản khi tên trùng duy nhất; chọn từ gợi ý nếu trùng tên. Nhân sự chưa có tài khoản chỉ lưu tên trên chuyến.
@@ -130,14 +129,14 @@ Phạm vi hiện tại chưa bao gồm Google OAuth, danh sách chờ tự độ
 Admin tạo chuyến bằng ngày cụ thể hoặc lịch lặp theo tuần, có kết thúc theo ngày/số lần/không giới hạn. Backend giữ phạm vi 90 ngày phía trước bằng tác vụ mỗi giờ khi đang chạy; bảng Lịch lặp cho tạm dừng/tiếp tục. Giảng viên được hỏi opt-in wishlist cho ngày NO_TRIP; booking và wishlist được ghi cùng lần xác nhận. Wishlist được quản lý tại trang tìm chuyến, không cần trang riêng. Xem docs/API.md cho endpoint, trạng thái và quy tắc lỗi.
 
 
-## Tài xế và phụ xe
+## Tài xế
 
-Mobile đăng nhập tài khoản driver/attendant để vào Home nhân sự. Admin tạo chuyến gắn đúng tài khoản; tên nhập tự do không liên kết tài khoản sẽ không có trong lịch phân công. Tài xế bắt đầu → đến từng điểm → hoàn thành; phụ xe xử lý đón/trả/vắng mặt tại điểm hiện tại. Cả tài xế và phụ xe được phân công đều thực hiện điểm danh. Báo cáo gửi từ trang chi tiết chuyến và xử lý ở tab Báo cáo trên web. Xem docs/API.md cho điều kiện thời gian, quyền, idempotency và các trạng thái. Không tự chuyển khách từ wishlist khi trả ghế.
+Fbus Driver đăng nhập tài khoản driver để vào Home nhân sự. Admin tạo chuyến gắn đúng tài khoản; tên nhập tự do không liên kết tài khoản sẽ không có trong lịch phân công. Tài xế xác nhận đến bến, điểm danh, bắt đầu di chuyển, đến bến kế tiếp và kết thúc tại bến cuối. Báo cáo gửi từ trang chi tiết chuyến và xử lý ở tab Báo cáo trên web. Xem docs/API.md cho điều kiện thời gian, quyền, idempotency và các trạng thái. Không tự chuyển khách từ wishlist khi trả ghế.
 
 
 ## QR lên xe
 
-Student/lecturer mở QR ở Chỗ của tôi, mã tự đổi 30 giây và được backend xác thực. Tài xế/phụ xe chọn Home → Quét QR → chọn chuyến đang thực hiện, đối chiếu tên/email/ghế rồi xác nhận. Mã gắn booking và phiên đăng nhập, có chữ ký, hết hạn không dùng được; quét lặp không điểm danh trùng. Migration V8; xem docs/API.md cho hợp đồng. Cần mạng, không có check-in QR offline.
+Student/lecturer mở QR ở Chỗ của tôi, mã tự đổi 30 giây và được backend xác thực. Tài xế chọn Home → Quét QR → chọn chuyến đang thực hiện, đối chiếu tên/email/ghế rồi xác nhận. Mã gắn booking và phiên đăng nhập, có chữ ký, hết hạn không dùng được; quét lặp không điểm danh trùng. Migration V8; xem docs/API.md cho hợp đồng. Cần mạng, không có check-in QR offline.
 
 
 ## Giờ mở đặt chỗ theo nhóm

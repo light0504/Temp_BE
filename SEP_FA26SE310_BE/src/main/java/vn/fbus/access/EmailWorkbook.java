@@ -25,7 +25,7 @@ public class EmailWorkbook {
     public record Parsed(int totalRows, List<Entry> entries, List<RowError> errors) {}
     private record EmailValue(@NotBlank @Email @Size(max=254) String value) {}
     private final Validator validator;
-    private static final List<String> ROLES = List.of("STUDENT","LECTURER","DRIVER","BUS_ATTENDANT");
+    private static final List<String> ROLES = List.of("STUDENT","LECTURER","DRIVER");
     static { ZipSecureFile.setMaxEntrySize(32L * 1024 * 1024); }
     public EmailWorkbook(Validator validator) { this.validator=validator; }
 
@@ -46,7 +46,7 @@ public class EmailWorkbook {
             var helper=sheet.getDataValidationHelper();
             var roleValidation=helper.createValidation(helper.createExplicitListConstraint(ROLES.toArray(String[]::new)),new CellRangeAddressList(1,MAX_ROWS,2,2));
             roleValidation.setEmptyCellAllowed(true); roleValidation.setShowErrorBox(true);
-            roleValidation.createErrorBox("Vai trò không hợp lệ","Chọn STUDENT, LECTURER, DRIVER hoặc BUS_ATTENDANT.");
+            roleValidation.createErrorBox("Vai trò không hợp lệ","Chọn STUDENT, LECTURER, DRIVER.");
             roleValidation.setShowPromptBox(true); roleValidation.createPromptBox("Vai trò","Để trống: STUDENT.");
             sheet.addValidationData(roleValidation);
             var emailPrompt=helper.createValidation(helper.createTextLengthConstraint(DataValidationConstraint.OperatorType.BETWEEN,"3","254"),new CellRangeAddressList(1,MAX_ROWS,0,0));
@@ -58,7 +58,7 @@ public class EmailWorkbook {
                 {"Cột","Quy định"},
                 {"Email","Bắt buộc. Mỗi dòng một email; không phân biệt chữ hoa/thường."},
                 {"Họ tên","Tùy chọn, tối đa 150 ký tự."},
-                {"Vai trò","Tùy chọn. Để trống = STUDENT. Giá trị: STUDENT, LECTURER, DRIVER, BUS_ATTENDANT."},
+                {"Vai trò","Tùy chọn. Để trống = STUDENT. Giá trị: STUDENT, LECTURER, DRIVER."},
                 {"Tệp","Nhập dữ liệu ở sheet Emails, từ dòng 2; tối đa 2.000 dòng và 2 MB. Không dùng công thức."},
                 {"Email trùng","Cùng vai trò: bỏ qua; khác vai trò: báo lỗi. Không sửa tài khoản hoặc email đã có."},
                 {"Đăng nhập","Danh sách cấp quyền email, không tạo mật khẩu. Google OAuth chưa được tích hợp."}
@@ -103,7 +103,7 @@ public class EmailWorkbook {
                     if (role.isEmpty()) role="STUDENT";
                     require(validator.validate(new EmailValue(email)).isEmpty(),400,"Email không hợp lệ.");
                     require(fullName.length()<=150,400,"Họ tên tối đa 150 ký tự.");
-                    require(ROLES.contains(role),400,"Vai trò phải là STUDENT, LECTURER, DRIVER hoặc BUS_ATTENDANT.");
+                    require(ROLES.contains(role),400,"Vai trò phải là STUDENT, LECTURER, DRIVER.");
                     for (var cell : row) require(columns.containsValue(cell.getColumnIndex()) || blank(cell),400,"Có dữ liệu ngoài các cột đã khai báo.");
                     entries.add(new Entry(r+1,email,fullName,role));
                 } catch (ApiException error) { errors.add(new RowError(r+1,email,error.getMessage())); }
