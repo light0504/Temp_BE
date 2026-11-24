@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vn.fbus.booking.*;
 import vn.fbus.wishlist.WishlistService;
+import vn.fbus.semester.SemesterService;
 import vn.fbus.common.*;
 import vn.fbus.transport.TransportRepository.*;
 import java.time.*;
@@ -16,14 +17,15 @@ import static vn.fbus.common.ApiException.require;
 public class BookingPlanService {
     private record Plan(long id,long user,long route,long boarding,long alighting,int slot,LocalDate from,LocalDate to,String weekdays,String key,String status,boolean wishlistMissingTrips) {}
     private record Choice(LocalDate date,String status,TravelSchedule.Candidate candidate) {}
-    private final JdbcTemplate jdbc;private final Database db;private final TravelSchedule schedule;
+    private final SemesterService semesters;private final JdbcTemplate jdbc;private final Database db;private final TravelSchedule schedule;
     private final BookingService bookings;private final Clock clock;private final WishlistService wishlists;
-    public BookingPlanService(JdbcTemplate jdbc,Database db,TravelSchedule schedule,BookingService bookings,Clock clock,WishlistService wishlists){this.jdbc=jdbc;this.db=db;this.schedule=schedule;this.bookings=bookings;this.clock=clock;this.wishlists=wishlists;}
+    public BookingPlanService(JdbcTemplate jdbc,Database db,TravelSchedule schedule,BookingService bookings,Clock clock,WishlistService wishlists,SemesterService semesters){this.semesters=semesters;this.jdbc=jdbc;this.db=db;this.schedule=schedule;this.bookings=bookings;this.clock=clock;this.wishlists=wishlists;}
     private void lecturer(long user){require("LECTURER".equals(jdbc.queryForObject("SELECT role FROM app_user WHERE id=?",String.class,user)),403,"Chỉ giảng viên được đặt lịch dài hạn.");}
     private String daysKey(List<Integer> days){return days.stream().sorted().map(String::valueOf).collect(java.util.stream.Collectors.joining(","));}
     private List<LocalDate> dates(ScheduleContracts.PlanInput input){
         require(!input.startDate().isBefore(LocalDate.now(clock)),400,"Ngày bắt đầu phải từ hôm nay.");
-        require(!input.endDate().isBefore(input.startDate()) && ChronoUnit.DAYS.between(input.startDate(),input.endDate())<90,400,"Khoảng đặt lịch tối đa 90 ngày.");
+        require(!input.endDate().isBefore(input.startDate()) && ChronoUnit.DAYS.between(input.startDate(),input.endDate())<=365,400,"Khoảng đặt lịch tối đa một năm.");
+        semesters.resolve(null,input.startDate(),input.endDate());
         require(new HashSet<>(input.weekdays()).size()==input.weekdays().size(),400,"Thứ trong tuần bị trùng.");
         var dates=input.startDate().datesUntil(input.endDate().plusDays(1)).filter(d->input.weekdays().contains(d.getDayOfWeek().getValue())).toList();
         require(!dates.isEmpty(),400,"Không có ngày phù hợp với các thứ đã chọn.");return dates;
@@ -62,7 +64,7 @@ public class BookingPlanService {
         }
         var dates=dates(input);schedule.interval(input.routeId(),input.boardingStopId(),input.alightingStopId());
         var trips=schedule.trips(input.routeId(),input.slot(),input.startDate(),input.endDate(),true);
-        long id=db.insert("INSERT INTO booking_plan(user_id,route_id,boarding_stop_id,alighting_stop_id,slot,start_date,end_date,weekdays,request_key,created_at,wishlist_missing_trips) VALUES (?,?,?,?,?,?,?,?,?,?,?)",user,input.routeId(),input.boardingStopId(),input.alightingStopId(),input.slot(),input.startDate(),input.endDate(),daysKey(input.weekdays()),input.idempotencyKey(),LocalDateTime.now(clock),input.wishlistMissingTrips());
+        long id=db.insert("INSERT INTO booking_plan(user_id,route_id,boarding_stop_id,alighting_stop_id,slot,start_date,end_date,weekdays,request_key,created_at,wishlist_missing_trips,semester_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",user,input.routeId(),input.boardingStopId(),input.alightingStopId(),input.slot(),input.startDate(),input.endDate(),daysKey(input.weekdays()),input.idempotencyKey(),LocalDateTime.now(clock),input.wishlistMissingTrips(),semesters.forDate(input.startDate()).semesterId());
         for(var date:dates){jdbc.update("INSERT INTO booking_plan_day(plan_id,travel_date,status) VALUES (?,?,'NO_TRIP')",id,date);var choice=choose(user,trips,date,input.boardingStopId(),input.alightingStopId());saveDay(user,id,choice);
             if(input.wishlistMissingTrips() && choice.status().equals("NO_TRIP")){
                 var outcome=wishlists.joinForPlan(user,new ScheduleContracts.WishlistInput(input.routeId(),input.boardingStopId(),input.alightingStopId(),date,input.slot()));
@@ -101,7 +103,7 @@ public class BookingPlanService {
     public List<Map<String,Object>> my(long user){lecturer(user);return jdbc.queryForList("SELECT id FROM booking_plan WHERE user_id=? ORDER BY created_at DESC,id DESC",Long.class,user).stream().map(id->view(user,id)).toList();}
     public Map<String,Object> view(long user,long id){
         var plan=plan(user,id);var route=schedule.interval(plan.route(),plan.boarding(),plan.alighting());
-        var row=new LinkedHashMap<String,Object>();row.put("planId",id);row.put("routeId",plan.route());row.put("routeName",route.name());
+        var row=new LinkedHashMap<String,Object>();row.put("planId",id);row.put("semesterId",jdbc.queryForObject("SELECT semester_id FROM booking_plan WHERE id=?",Long.class,id));row.put("routeId",plan.route());row.put("routeName",route.name());
         row.put("boardingStop",route.stops().stream().filter(s->s.stopId()==plan.boarding()).findFirst().orElseThrow().name());
         row.put("alightingStop",route.stops().stream().filter(s->s.stopId()==plan.alighting()).findFirst().orElseThrow().name());
         row.put("boardingStopId",plan.boarding());row.put("alightingStopId",plan.alighting());row.put("wishlistMissingTrips",plan.wishlistMissingTrips());row.put("slot",plan.slot());row.put("startDate",plan.from());row.put("endDate",plan.to());row.put("weekdays",Arrays.stream(plan.weekdays().split(",")).map(Integer::valueOf).toList());row.put("status",plan.status());

@@ -55,7 +55,7 @@ Các biến cấu hình: `DB_URL`, `DB_USER`, `DB_PASSWORD`, `JWT_SECRET`, `ALLO
 
 ### Script tạo schema PostgreSQL
 
-[postgresql-schema.sql](docs/db/postgresql-schema.sql) tổng hợp các migration V1–V10 để khởi tạo thủ công trên schema trống. Script tạo bảng, ràng buộc, chỉ mục và dữ liệu hệ thống từ migration.
+[postgresql-schema.sql](docs/db/postgresql-schema.sql) là schema tham khảo cũ. Các thay đổi học kỳ và hủy chuyến dùng Flyway V13–V15; khởi tạo database mới bằng backend để có schema đầy đủ. Script tạo bảng, ràng buộc, chỉ mục và dữ liệu hệ thống từ migration.
 
 ~~~powershell
 psql -h localhost -U fbus -d fbus -v ON_ERROR_STOP=1 -f docs/db/postgresql-schema.sql

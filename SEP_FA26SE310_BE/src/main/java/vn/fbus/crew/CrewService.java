@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vn.fbus.common.*;
 import vn.fbus.transport.TransportRepository;
+import vn.fbus.transport.TransportService;
 import vn.fbus.transport.TransportRepository.TripRow;
 import java.time.*;
 import java.util.*;
@@ -13,9 +14,9 @@ import static vn.fbus.crew.CrewContracts.*;
 
 @Service
 public class CrewService {
- private final JdbcTemplate jdbc; private final Database db; private final TransportRepository trips; private final Clock clock;
- public CrewService(JdbcTemplate jdbc, Database db, TransportRepository trips, Clock clock) {
-   this.jdbc=jdbc;this.db=db;this.trips=trips;this.clock=clock;
+ private final JdbcTemplate jdbc; private final Database db; private final TransportRepository trips; private final Clock clock; private final TransportService transport;
+ public CrewService(JdbcTemplate jdbc, Database db, TransportRepository trips, Clock clock, TransportService transport) {
+   this.jdbc=jdbc;this.db=db;this.trips=trips;this.clock=clock;this.transport=transport;
  }
  private LocalDateTime now() { return LocalDateTime.now(clock); }
  private TripRow assigned(long user, long id, boolean lock) {
@@ -208,35 +209,69 @@ public class CrewService {
  }
  @Transactional
  public Report report(long user,long id,ReportInput input) {
-   assigned(user,id,true);
-   var existing=jdbc.queryForList("SELECT id,trip_id,category,priority,location,description FROM trip_report WHERE reporter_id=? AND request_key=?",user,input.idempotencyKey());
+   var trip=assigned(user,id,true);
+   var existing=jdbc.queryForList("SELECT id,trip_id,category,priority,location,description,cancellation_requested FROM trip_report WHERE reporter_id=? AND request_key=?",user,input.idempotencyKey());
    if(!existing.isEmpty()) {
      var old=existing.getFirst();
-     require(((Number)old.get("trip_id")).longValue()==id && Objects.equals(old.get("category"),input.category()) && Objects.equals(old.get("priority"),input.priority()) && Objects.equals(old.get("location"),input.location().trim()) && Objects.equals(old.get("description"),input.description().trim()),409,"Mã yêu cầu đã được dùng cho báo cáo khác.");
+     require(((Number)old.get("trip_id")).longValue()==id && Objects.equals(old.get("category"),input.category()) && Objects.equals(old.get("priority"),input.priority()) && Objects.equals(old.get("location"),input.location().trim()) && Objects.equals(old.get("description"),input.description().trim()) && Objects.equals(old.get("cancellation_requested"),input.cancellationRequested()),409,"Mã yêu cầu đã được dùng cho báo cáo khác.");
      return reportView(((Number)old.get("id")).longValue());
    }
-   long reportId=db.insert("INSERT INTO trip_report(trip_id,reporter_id,category,priority,location,description,request_key,created_at) VALUES (?,?,?,?,?,?,?,?)",
-     id,user,input.category(),input.priority(),input.location().trim(),input.description().trim(),input.idempotencyKey(),now());
+   require(!input.cancellationRequested() || (!trip.status().equals("CANCELLED") && trip.executionStatus().equals("READY") && trip.departureAt().isAfter(now())),409,"Chỉ yêu cầu hủy chuyến sắp tới chưa bắt đầu.");
+   long reportId=db.insert("INSERT INTO trip_report(trip_id,reporter_id,category,priority,location,description,request_key,created_at,cancellation_requested,cancellation_decision) VALUES (?,?,?,?,?,?,?,?,?,?)",
+     id,user,input.category(),input.priority(),input.location().trim(),input.description().trim(),input.idempotencyKey(),now(),input.cancellationRequested(),input.cancellationRequested()?"PENDING":null);
    return reportView(reportId);
  }
  private static final String REPORT_SQL="""
-   SELECT p.*,t.code AS trip_code,t.vehicle,r.name AS route_name,u.full_name AS reporter,u.role AS reporter_role,a.full_name AS resolved_name
+   SELECT p.*,t.code AS trip_code,t.vehicle,t.departure_at,t.status AS trip_status,t.execution_status,r.name AS route_name,u.full_name AS reporter,u.role AS reporter_role,a.full_name AS resolved_name
    FROM trip_report p JOIN trip t ON t.id=p.trip_id JOIN route r ON r.id=t.route_id
    JOIN app_user u ON u.id=p.reporter_id LEFT JOIN app_user a ON a.id=p.resolved_by
    """;
  private List<Report> queryReports(String where,Object... args) {
-   return jdbc.query(REPORT_SQL+where,(r,n)->new Report(r.getLong("id"),r.getLong("trip_id"),r.getString("trip_code"),r.getString("route_name"),r.getString("vehicle"),r.getString("reporter"),r.getString("reporter_role"),r.getString("category"),r.getString("priority"),r.getString("location"),r.getString("description"),r.getString("status"),r.getObject("created_at",LocalDateTime.class),r.getString("resolution"),r.getString("resolved_name"),r.getObject("updated_at",LocalDateTime.class)),args);
+   return jdbc.query(REPORT_SQL+where,(r,n)->new Report(r.getLong("id"),r.getLong("trip_id"),r.getString("trip_code"),r.getString("route_name"),r.getString("vehicle"),r.getString("reporter"),r.getString("reporter_role"),r.getString("category"),r.getString("priority"),r.getString("location"),r.getString("description"),r.getString("status"),r.getObject("created_at",LocalDateTime.class),r.getString("resolution"),r.getString("resolved_name"),r.getObject("updated_at",LocalDateTime.class),r.getBoolean("cancellation_requested"),r.getString("cancellation_decision"),r.getObject("departure_at",LocalDateTime.class),r.getString("trip_status"),r.getString("execution_status")),args);
  }
  private Report reportView(long id) { return queryReports(" WHERE p.id=?",id).stream().findFirst().orElseThrow(()->new ApiException(404,"Không tìm thấy báo cáo.")); }
  public List<Report> reports(long user,long tripId) { assigned(user,tripId,false);return queryReports(" WHERE p.trip_id=? AND p.reporter_id=? ORDER BY p.created_at DESC,p.id DESC",tripId,user); }
- public List<Report> adminReports(String status,int page,int size) {
+ public Map<String,Object> myReports(long user,int page,int size) {
+   require(page>=0&&page<=100000&&size>=1&&size<=50,400,"Phân trang không hợp lệ.");
+   long total=jdbc.queryForObject("SELECT COUNT(*) FROM trip_report WHERE reporter_id=?",Long.class,user);
+   return Map.of("items",queryReports(" WHERE p.reporter_id=? ORDER BY p.created_at DESC,p.id DESC LIMIT ? OFFSET ?",user,size,(long)page*size),
+       "page",page,"totalElements",total,"totalPages",(total+size-1)/size);
+ }
+ public List<Report> adminReports(String status,int page,int size,Long semesterId) {
    require(status==null||List.of("OPEN","IN_REVIEW","RESOLVED").contains(status),400,"Trạng thái không hợp lệ.");
    require(page>=0&&page<=100000&&size>=1&&size<=100,400,"Phân trang không hợp lệ.");
-   return status==null?queryReports(" ORDER BY p.created_at DESC,p.id DESC LIMIT ? OFFSET ?",size,page*size):queryReports(" WHERE p.status=? ORDER BY p.created_at DESC,p.id DESC LIMIT ? OFFSET ?",status,size,page*size);
+   return queryReports(" WHERE (CAST(? AS BIGINT) IS NULL OR t.semester_id=?) AND (CAST(? AS VARCHAR) IS NULL OR p.status=?) ORDER BY p.created_at DESC,p.id DESC LIMIT ? OFFSET ?",semesterId,semesterId,status,status,size,page*size);
+ }
+ public List<Report> pendingCancellations() {
+   return queryReports(" WHERE p.cancellation_decision='PENDING' AND t.status<>'CANCELLED' ORDER BY p.created_at,p.id");
+ }
+ @Transactional
+ public Report approveCancellation(long admin,long id,String reason) {
+   jdbc.queryForList("SELECT name FROM operation_lock WHERE name='trip-schedule' FOR UPDATE");
+   var snapshot=reportView(id);trips.trip(snapshot.tripId(),true);
+   jdbc.queryForList("SELECT id FROM trip_report WHERE trip_id=? ORDER BY id FOR UPDATE",snapshot.tripId());
+   var report=reportView(id);
+   require(report.cancellationRequested(),400,"Báo cáo không yêu cầu hủy chuyến.");
+   if("APPROVED".equals(report.cancellationDecision()))return report;
+   require("PENDING".equals(report.cancellationDecision()),409,"Yêu cầu đã được xử lý.");
+   transport.cancelTrip(admin,report.tripId(),reason);
+   jdbc.update("UPDATE trip_report SET cancellation_decision='APPROVED',status='RESOLVED',resolution=?,resolved_by=?,updated_at=? WHERE trip_id=? AND cancellation_decision='PENDING'",reason.trim(),admin,now(),report.tripId());
+   return reportView(id);
+ }
+ @Transactional
+ public Report declineCancellation(long admin,long id,String reason) {
+   jdbc.queryForList("SELECT id FROM trip_report WHERE id=? FOR UPDATE",id);var report=reportView(id);
+   require(report.cancellationRequested(),400,"Báo cáo không yêu cầu hủy chuyến.");
+   if("DECLINED".equals(report.cancellationDecision()))return report;
+   require("PENDING".equals(report.cancellationDecision()),409,"Yêu cầu đã được xử lý.");
+   jdbc.update("UPDATE trip_report SET cancellation_decision='DECLINED',status='RESOLVED',resolution=?,resolved_by=?,updated_at=? WHERE id=?",reason.trim(),admin,now(),id);
+   return reportView(id);
  }
  @Transactional
  public Report resolve(long admin,long id,Resolution input) {
    jdbc.queryForList("SELECT id FROM trip_report WHERE id=? FOR UPDATE",id); var old=reportView(id);
+   require(!"PENDING".equals(old.cancellationDecision())||!input.status().equals("RESOLVED"),409,"Duyệt hoặc từ chối yêu cầu hủy trước khi đóng báo cáo.");
+   require(old.cancellationDecision()==null||"PENDING".equals(old.cancellationDecision())||input.status().equals("RESOLVED"),409,"Yêu cầu đã được xử lý.");
    if(old.status().equals(input.status())&&Objects.equals(old.resolution(),input.resolution()==null?null:input.resolution().trim())) return old;
    require(!input.status().equals("RESOLVED") || (input.resolution()!=null&&!input.resolution().isBlank()),400,"Nhập kết quả xử lý.");
    jdbc.update("UPDATE trip_report SET status=?,resolution=?,resolved_by=?,updated_at=? WHERE id=?",input.status(),input.resolution()==null?null:input.resolution().trim(),admin,now(),id);

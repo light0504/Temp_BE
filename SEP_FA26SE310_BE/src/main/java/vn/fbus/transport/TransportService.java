@@ -7,6 +7,9 @@ import vn.fbus.common.*;
 import vn.fbus.transport.TransportRepository.*;
 import vn.fbus.fleet.TripVehicleResolver;
 import vn.fbus.priority.BookingOpeningService;
+import vn.fbus.semester.SemesterService;
+import org.springframework.context.ApplicationEventPublisher;
+import vn.fbus.wishlist.TripCreated;
 import java.time.*;
 import java.util.*;
 import static vn.fbus.common.ApiException.require;
@@ -18,8 +21,10 @@ public class TransportService {
     private final Database db;
     private final Clock clock;
     private final TripVehicleResolver vehicles;
-    public TransportService(TransportRepository repository, JdbcTemplate jdbc, Database db, Clock clock, TripVehicleResolver vehicles) {
-        this.repository=repository; this.jdbc=jdbc; this.db=db; this.clock=clock; this.vehicles=vehicles;
+    private final SemesterService semesters;
+    private final ApplicationEventPublisher events;
+    public TransportService(TransportRepository repository, JdbcTemplate jdbc, Database db, Clock clock, TripVehicleResolver vehicles, SemesterService semesters, ApplicationEventPublisher events) {
+        this.repository=repository; this.jdbc=jdbc; this.db=db; this.clock=clock; this.vehicles=vehicles; this.semesters=semesters; this.events=events;
     }
     @Transactional
     public StopView createStop(Contracts.NewStop input) {
@@ -46,18 +51,20 @@ public class TransportService {
     @Transactional
     public TripView createTrip(Contracts.NewTrip input) {
         jdbc.queryForList("SELECT name FROM operation_lock WHERE name='trip-schedule' FOR UPDATE");
-        return insertTrip(repository.route(input.routeId()),vehicles.resolve(input),input.date(),input.time(),input.slot(),input.bookingOpening(),input.bookingOpeningLead());
+        return insertTrip(repository.route(input.routeId()),vehicles.resolve(input),input.date(),input.time(),input.slot(),input.bookingOpening(),input.bookingOpeningLead(),input.semesterId());
     }
     @Transactional
     public List<TripView> createBatch(Contracts.BatchTrips input) {
         require(new HashSet<>(input.dates()).size()==input.dates().size(),400,"Danh sách ngày bị trùng.");
         jdbc.queryForList("SELECT name FROM operation_lock WHERE name='trip-schedule' FOR UPDATE");
         var route=repository.route(input.routeId()); var vehicle=vehicles.resolve(input);
+        semesters.resolve(input.semesterId(),Collections.min(input.dates()),Collections.max(input.dates()));
         var created=new ArrayList<TripView>();
-        for (var date : input.dates().stream().sorted().toList()) created.add(insertTrip(route,vehicle,date,input.time(),input.slot(),input.bookingOpening(),input.bookingOpeningLead()));
+        for (var date : input.dates().stream().sorted().toList()) created.add(insertTrip(route,vehicle,date,input.time(),input.slot(),input.bookingOpening(),input.bookingOpeningLead(),input.semesterId()));
         return created;
     }
-    private TripView insertTrip(RouteView route, TripVehicleResolver.Assignment vehicle, LocalDate date, LocalTime time, int slot, Contracts.BookingOpening absoluteOpening, Contracts.BookingOpeningLead lead) {
+    private TripView insertTrip(RouteView route, TripVehicleResolver.Assignment vehicle, LocalDate date, LocalTime time, int slot, Contracts.BookingOpening absoluteOpening, Contracts.BookingOpeningLead lead, Long semesterId) {
+        var semester=semesters.resolve(semesterId,date,date);
         var departure = date.atTime(time.withSecond(0).withNano(0));
         require(departure.isAfter(LocalDateTime.now(clock)),400,"Giờ khởi hành phải ở tương lai: "+date+".");
         var opening = BookingOpeningService.resolve(absoluteOpening, lead, departure);
@@ -68,23 +75,25 @@ public class TransportService {
         if (vehicle.driverId()!=null) { sql+=" OR driver_id=? OR (driver_id IS NULL AND LOWER(TRIM(driver))=LOWER(?))"; params.add(vehicle.driverId()); }
         else sql+=" OR LOWER(TRIM(driver))=LOWER(?)";
         params.add(vehicle.driverName());
-        sql+=") AND departure_at<? AND arrival_at>?"; params.add(arrival); params.add(departure);
+        sql+=") AND status<>'CANCELLED' AND departure_at<? AND arrival_at>?"; params.add(arrival); params.add(departure);
         int conflicts=jdbc.queryForObject(sql,Integer.class,params.toArray());
         require(conflicts==0,409,"Trùng lịch xe hoặc tài xế ngày "+date+". Chưa tạo chuyến nào trong lần lưu này.");
         String code = route.routeCode()+"-"+UUID.randomUUID().toString().substring(0,8);
-        long id = db.insert("INSERT INTO trip(code,route_id,departure_at,arrival_at,slot,vehicle,driver,capacity,vehicle_id,driver_id,staff_booking_opens_at,priority_student_booking_opens_at,regular_booking_opens_at,staff_booking_lead_hours,priority_student_booking_lead_hours,regular_booking_lead_hours) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        long id = db.insert("INSERT INTO trip(code,route_id,departure_at,arrival_at,slot,vehicle,driver,capacity,vehicle_id,driver_id,staff_booking_opens_at,priority_student_booking_opens_at,regular_booking_opens_at,staff_booking_lead_hours,priority_student_booking_lead_hours,regular_booking_lead_hours,semester_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             code,route.routeId(),departure,arrival,slot,vehicle.licensePlate(),vehicle.driverName(),vehicle.capacity(),vehicle.vehicleId(),vehicle.driverId(),opening==null?null:opening.staffOpensAt(),opening==null?null:opening.priorityStudentOpensAt(),opening==null?null:opening.regularOpensAt(),
-            lead==null?null:lead.staffHours(),lead==null?null:lead.priorityStudentHours(),lead==null?null:lead.regularHours());
+            lead==null?null:lead.staffHours(),lead==null?null:lead.priorityStudentHours(),lead==null?null:lead.regularHours(),semester.semesterId());
         for (int i=0; i<route.stops().size(); i++) {
             var point=route.stops().get(i);
             jdbc.update("INSERT INTO trip_stop(trip_id,stop_id,position,arrival_at) VALUES (?,?,?,?)",id,point.stopId(),i,departure.plusMinutes(point.offsetMinutes()));
         }
         for (String seatCode : BusSeatLayout.codes(vehicle.capacity())) jdbc.update("INSERT INTO seat(trip_id,code) VALUES (?,?)",id,seatCode);
+        events.publishEvent(new TripCreated(id));
         return repository.view(repository.trip(id,false),0,route.stops().size()-1);
     }
     @Transactional
     public TripView changeStatus(long id, String status) {
         var trip=repository.trip(id,true);
+        require(!trip.status().equals("CANCELLED"),409,"Chuyến đã hủy, không thể mở lại.");
         require(trip.executionStatus().equals("READY"),409,"Không thể đổi trạng thái chuyến đã bắt đầu hoặc kết thúc.");
         jdbc.update("UPDATE trip SET status=? WHERE id=?",status,id);
         return repository.view(repository.trip(id,false),0,repository.tripStops(id).size()-1);
@@ -92,7 +101,7 @@ public class TransportService {
     @Transactional
     public TripView changeBookingOpening(long id,Contracts.BookingOpeningUpdate input) {
         var trip=repository.trip(id,true);
-        require(trip.executionStatus().equals("READY")&&trip.departureAt().isAfter(LocalDateTime.now(clock)),409,"Chỉ sửa giờ mở đặt chỗ của chuyến chưa khởi hành.");
+        require(!trip.status().equals("CANCELLED")&&trip.executionStatus().equals("READY")&&trip.departureAt().isAfter(LocalDateTime.now(clock)),409,"Chỉ sửa giờ mở đặt chỗ của chuyến chưa khởi hành.");
         var lead = input.bookingOpeningLead();
         var opening = BookingOpeningService.resolve(input.bookingOpening(), lead, trip.departureAt());
         jdbc.update("""
@@ -102,8 +111,8 @@ public class TransportService {
             lead==null?null:lead.staffHours(),lead==null?null:lead.priorityStudentHours(),lead==null?null:lead.regularHours(),id);
         return repository.view(repository.trip(id,false),0,repository.tripStops(id).size()-1);
     }
-    public List<TripView> adminTrips() {
-        return repository.trips().stream().map(t -> repository.view(t,0,repository.tripStops(t.id()).size()-1)).toList();
+    public List<TripView> adminTrips(Long semesterId) {
+        return repository.trips().stream().filter(t->semesterId==null||t.semesterId()==semesterId).map(t -> repository.view(t,0,repository.tripStops(t.id()).size()-1)).toList();
     }
     public List<TripView> search(LocalDate date, Long routeId, Long boardingStopId, Long alightingStopId, Integer slot) {
         require(!date.isBefore(LocalDate.now(clock)),400,"Ngày khởi hành phải từ hôm nay trở đi.");
@@ -130,5 +139,29 @@ public class TransportService {
         var trip=repository.trip(tripId,false); var points=interval(tripId,boarding,alighting);
         require(trip.status().equals("SCHEDULED") && !trip.executionStatus().equals("COMPLETED") && points.getFirst().position()>=trip.firstBoardingPosition() && points.getFirst().arrivalAt().isAfter(LocalDateTime.now(clock)),409,"Chuyến không còn nhận đặt chỗ.");
         return repository.seats(tripId,points.getFirst().position(),points.getLast().position());
+    }
+
+    @Transactional
+    public TripView cancelTrip(long admin,long id,String reason) {
+        // Serialize with trip creation and all booking/attendance changes.
+        jdbc.queryForList("SELECT name FROM operation_lock WHERE name='trip-schedule' FOR UPDATE");
+        var trip=repository.trip(id,true);
+        if(trip.status().equals("CANCELLED"))return repository.view(trip,0,repository.tripStops(id).size()-1);
+        require(!trip.executionStatus().equals("COMPLETED"),409,"Chuyến đã hoàn thành.");
+        require(!trip.inTransit(),409,"Xe đang di chuyển. Xác nhận đã dừng tại bến trước khi hủy.");
+        var time=LocalDateTime.now(clock);
+        var users=jdbc.queryForList("SELECT DISTINCT user_id FROM booking WHERE trip_id=? AND user_id IS NOT NULL AND (status='RESERVED' OR status='CHECKED_IN' AND alighted_at IS NULL)",Long.class,id);
+        jdbc.update("UPDATE trip SET status='CANCELLED',cancellation_note=?,cancelled_at=?,cancelled_by=? WHERE id=?",reason.trim(),time,admin,id);
+        jdbc.update("UPDATE booking SET status='CANCELLED',cancellation_reason='TRIP_CANCELLED',cancelled_at=? WHERE trip_id=? AND (status='RESERVED' OR status='CHECKED_IN' AND alighted_at IS NULL)",time,id);
+        jdbc.update("DELETE FROM booking_checkin_qr WHERE booking_id IN (SELECT id FROM booking WHERE trip_id=?)",id);
+        jdbc.update("UPDATE trip_report SET cancellation_decision='APPROVED',status='RESOLVED',resolution=?,resolved_by=?,updated_at=? WHERE trip_id=? AND cancellation_decision='PENDING'",reason.trim(),admin,time,id);
+        jdbc.update("UPDATE booking_plan_day SET status='CANCELLED' WHERE booking_id IN (SELECT id FROM booking WHERE trip_id=? AND cancellation_reason='TRIP_CANCELLED')",id);
+        for(long user:users){
+            String message="Chuyến "+trip.code()+" đã hủy. "+reason.trim();
+            if(jdbc.update("UPDATE user_notification SET message=?,created_at=?,read_at=NULL WHERE user_id=? AND trip_id=?",message,time,user,id)==0)
+                jdbc.update("INSERT INTO user_notification(user_id,trip_id,message,created_at) VALUES (?,?,?,?)",user,id,message,time);
+        }
+        jdbc.update("INSERT INTO crew_event(trip_id,user_id,action,stop_position,created_at) VALUES (?,?,'CANCEL_TRIP',?,?)",id,admin,trip.currentStopPosition(),time);
+        return repository.view(repository.trip(id,false),0,repository.tripStops(id).size()-1);
     }
 }

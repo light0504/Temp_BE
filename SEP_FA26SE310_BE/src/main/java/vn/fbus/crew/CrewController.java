@@ -20,6 +20,7 @@ public class CrewController {
                               @Valid @RequestBody WalkIn input) {
    return ApiResponse.ok(service.addWalkIn(who.userId(), id, input));
  }
+ @GetMapping("/reports") ApiResponse<?> myReports(@AuthenticationPrincipal Identity who,@RequestParam(defaultValue="0") int page,@RequestParam(defaultValue="10") int size){return ApiResponse.ok(service.myReports(who.userId(),page,size));}
  @GetMapping("/trips/{id}/reports") ApiResponse<?> reports(@AuthenticationPrincipal Identity who,@PathVariable long id){return ApiResponse.ok(service.reports(who.userId(),id));}
  @PostMapping("/trips/{id}/reports") ApiResponse<?> report(@AuthenticationPrincipal Identity who,@PathVariable long id,@Valid @RequestBody ReportInput input){return ApiResponse.ok(service.report(who.userId(),id,input));}
 }

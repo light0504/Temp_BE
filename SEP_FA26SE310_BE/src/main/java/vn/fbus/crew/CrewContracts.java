@@ -25,10 +25,11 @@ public final class CrewContracts {
  public record ReportInput(@NotNull @Pattern(regexp="VEHICLE|CAPACITY|DELAY|PASSENGER|OTHER") String category,
    @NotNull @Pattern(regexp="LOW|NORMAL|URGENT") String priority,
    @NotNull @Size(max=200) String location, @NotBlank @Size(max=1000) String description,
-   @NotBlank @Pattern(regexp="[A-Za-z0-9_-]{16,100}") String idempotencyKey) {}
+   @NotBlank @Pattern(regexp="[A-Za-z0-9_-]{16,100}") String idempotencyKey, boolean cancellationRequested) {}
  public record Resolution(@NotNull @Pattern(regexp="OPEN|IN_REVIEW|RESOLVED") String status, @Size(max=500) String resolution) {}
  public record Report(long reportId, long tripId, String tripCode, String routeName, String vehicle,
    String reporter, String reporterRole, String category, String priority, String location, String description,
-   String status, LocalDateTime createdAt, String resolution, String resolvedBy, LocalDateTime updatedAt) {}
+   String status, LocalDateTime createdAt, String resolution, String resolvedBy, LocalDateTime updatedAt,
+   boolean cancellationRequested, String cancellationDecision, LocalDateTime departureAt, String tripStatus, String executionStatus) {}
 }
 

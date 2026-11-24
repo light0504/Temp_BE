@@ -9,6 +9,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import vn.fbus.common.*;
 import vn.fbus.fleet.TripVehicleResolver;
 import vn.fbus.priority.BookingOpeningService;
+import vn.fbus.semester.SemesterService;
 import vn.fbus.transport.*;
 import vn.fbus.transport.TransportRepository.TripView;
 import java.time.*;
@@ -18,14 +19,14 @@ import static vn.fbus.common.ApiException.require;
 @Service
 public class TripRecurrenceService {
     private record Rule(long id,RecurrenceContracts.Create input,int generated,LocalDate through,String status,String error,String routeName) {}
-    private final JdbcTemplate jdbc;private final Database db;private final TripVehicleResolver vehicles;private final TransportService transport;private final TransportRepository trips;private final Clock clock;private final ObjectMapper json;private final TransactionTemplate tx;
-    public TripRecurrenceService(JdbcTemplate jdbc,Database db,TripVehicleResolver vehicles,TransportService transport,TransportRepository trips,Clock clock,ObjectMapper json,PlatformTransactionManager manager){this.jdbc=jdbc;this.db=db;this.vehicles=vehicles;this.transport=transport;this.trips=trips;this.clock=clock;this.json=json;this.tx=new TransactionTemplate(manager);}
+    private final SemesterService semesters; private final JdbcTemplate jdbc;private final Database db;private final TripVehicleResolver vehicles;private final TransportService transport;private final TransportRepository trips;private final Clock clock;private final ObjectMapper json;private final TransactionTemplate tx;
+    public TripRecurrenceService(JdbcTemplate jdbc,Database db,TripVehicleResolver vehicles,TransportService transport,TransportRepository trips,Clock clock,ObjectMapper json,PlatformTransactionManager manager,SemesterService semesters){this.semesters=semesters;this.jdbc=jdbc;this.db=db;this.vehicles=vehicles;this.transport=transport;this.trips=trips;this.clock=clock;this.json=json;this.tx=new TransactionTemplate(manager);}
     private void lock(){jdbc.queryForList("SELECT name FROM operation_lock WHERE name='trip-schedule' FOR UPDATE");}
     private List<Integer> parseDays(String value){return Arrays.stream(value.split(",")).map(Integer::valueOf).toList();}
     private String days(List<Integer> value){return value.stream().sorted().map(String::valueOf).collect(java.util.stream.Collectors.joining(","));}
     private Rule rule(long id){
         return jdbc.query("SELECT a.*,r.name AS route_name FROM trip_recurrence a JOIN route r ON r.id=a.route_id WHERE a.id=?",(rs,n)->new Rule(rs.getLong("id"),
-            new RecurrenceContracts.Create(rs.getLong("route_id"),rs.getObject("vehicle_id",Long.class),rs.getObject("start_date",LocalDate.class),rs.getObject("departure_time",LocalTime.class),rs.getInt("slot"),rs.getString("vehicle"),rs.getInt("capacity"),rs.getObject("driver_id",Long.class),rs.getString("driver"),rs.getInt("interval_weeks"),parseDays(rs.getString("weekdays")),rs.getString("end_type"),rs.getObject("until_date",LocalDate.class),rs.getObject("occurrence_limit",Integer.class),rs.getString("request_key"),TransportRepository.bookingOpening(rs),rs.getObject("week_limit",Integer.class),TransportRepository.bookingOpeningLead(rs)),
+            new RecurrenceContracts.Create(rs.getLong("route_id"),rs.getObject("vehicle_id",Long.class),rs.getObject("start_date",LocalDate.class),rs.getObject("departure_time",LocalTime.class),rs.getInt("slot"),rs.getString("vehicle"),rs.getInt("capacity"),rs.getObject("driver_id",Long.class),rs.getString("driver"),rs.getInt("interval_weeks"),parseDays(rs.getString("weekdays")),rs.getString("end_type"),rs.getObject("until_date",LocalDate.class),rs.getObject("occurrence_limit",Integer.class),rs.getString("request_key"),TransportRepository.bookingOpening(rs),rs.getObject("week_limit",Integer.class),TransportRepository.bookingOpeningLead(rs),rs.getLong("semester_id")),
             rs.getInt("generated_count"),rs.getObject("processed_through",LocalDate.class),rs.getString("status"),rs.getString("last_error"),rs.getString("route_name")),id).stream().findFirst().orElseThrow(()->new ApiException(404,"Không tìm thấy lịch lặp."));
     }
     private boolean matches(RecurrenceContracts.Create input,LocalDate date){
@@ -40,6 +41,7 @@ public class TripRecurrenceService {
         };
     }
     private void validate(RecurrenceContracts.Create input){
+        semesters.resolve(input.semesterId(),input.startDate(),input.startDate());
         require(!input.startDate().isBefore(LocalDate.now(clock)) && input.startDate().getYear()<=9998,400,"Ngày bắt đầu phải từ hôm nay và trước năm 9999.");
         require(new HashSet<>(input.weekdays()).size()==input.weekdays().size(),400,"Thứ lặp lại bị trùng.");
         if(input.endType().equals("UNTIL"))require(input.untilDate()!=null && !input.untilDate().isBefore(input.startDate()) && input.untilDate().getYear()<=9998,400,"Chọn ngày kết thúc từ ngày bắt đầu.");
@@ -61,8 +63,8 @@ public class TripRecurrenceService {
             require(hash.equals(jdbc.queryForObject("SELECT request_hash FROM trip_recurrence WHERE id=?",String.class,old.getFirst())),409,"Mã yêu cầu đã dùng cho lịch lặp khác.");
             var existing=jdbc.queryForList("SELECT trip_id FROM trip_recurrence_day WHERE rule_id=? ORDER BY travel_date LIMIT 90",Long.class,old.getFirst()).stream().map(id->{var trip=trips.trip(id,false);return trips.view(trip,0,trips.tripStops(id).size()-1);}).toList();return Map.of("rule",view(rule(old.getFirst())),"trips",existing);
         }
-        validate(input);trips.route(input.routeId());var vehicle=vehicles.resolve(input);
-        long id=db.insert("INSERT INTO trip_recurrence(route_id,vehicle_id,vehicle,capacity,driver_id,driver,departure_time,slot,start_date,interval_weeks,weekdays,end_type,until_date,occurrence_limit,week_limit,processed_through,created_by,request_key,request_hash,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",input.routeId(),vehicle.vehicleId(),vehicle.licensePlate(),vehicle.capacity(),vehicle.driverId(),vehicle.driverName(),input.time(),input.slot(),input.startDate(),input.intervalWeeks(),days(input.weekdays()),input.endType(),input.untilDate(),input.occurrences(),input.weeks(),input.startDate().minusDays(1),admin,input.idempotencyKey(),hash,LocalDateTime.now(clock));
+        validate(input);trips.route(input.routeId());var vehicle=vehicles.resolve(input);var semester=semesters.resolve(input.semesterId(),input.startDate(),input.startDate());
+        long id=db.insert("INSERT INTO trip_recurrence(route_id,vehicle_id,vehicle,capacity,driver_id,driver,departure_time,slot,start_date,interval_weeks,weekdays,end_type,until_date,occurrence_limit,week_limit,processed_through,created_by,request_key,request_hash,created_at,semester_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",input.routeId(),vehicle.vehicleId(),vehicle.licensePlate(),vehicle.capacity(),vehicle.driverId(),vehicle.driverName(),input.time(),input.slot(),input.startDate(),input.intervalWeeks(),days(input.weekdays()),input.endType(),input.untilDate(),input.occurrences(),input.weeks(),input.startDate().minusDays(1),admin,input.idempotencyKey(),hash,LocalDateTime.now(clock),semester.semesterId());
         var opening=input.bookingOpening();
         var lead = input.bookingOpeningLead();
         jdbc.update("""
@@ -75,6 +77,8 @@ public class TripRecurrenceService {
     private List<TripView> fill(Rule rule,boolean initial){
         var input=rule.input();var today=LocalDate.now(clock);var horizon=(initial && input.startDate().isAfter(today)?input.startDate():today).plusDays(89);
         var end = endDate(input);
+        var semesterEnd=semesters.get(input.semesterId()).endDate();
+        if(end==null||semesterEnd.isBefore(end))end=semesterEnd;
         if (end != null && end.isBefore(horizon)) horizon = end;
         var first=rule.through().plusDays(1);if(first.isBefore(today))first=today;if(first.isAfter(horizon)){
             if(end != null && today.isAfter(end))jdbc.update("UPDATE trip_recurrence SET status='COMPLETED',processed_through=?,last_error=? WHERE id=?",end,"Đã qua ngày kết thúc; không tạo bù chuyến quá khứ.",rule.id());
@@ -85,7 +89,7 @@ public class TripRecurrenceService {
             if(input.endType().equals("COUNT") && count+dates.size()>=input.occurrences())break;
             if(matches(input,date) && date.atTime(input.time()).isAfter(LocalDateTime.now(clock)))dates.add(date);
         }
-        List<TripView> generated=dates.isEmpty()?List.of():transport.createBatch(new Contracts.BatchTrips(input.routeId(),input.vehicleId(),dates,input.time(),input.slot(),input.vehicle(),input.capacity(),input.driverId(),input.driver(),input.bookingOpening(),input.bookingOpeningLead()));
+        List<TripView> generated=dates.isEmpty()?List.of():transport.createBatch(new Contracts.BatchTrips(input.routeId(),input.vehicleId(),dates,input.time(),input.slot(),input.vehicle(),input.capacity(),input.driverId(),input.driver(),input.bookingOpening(),input.bookingOpeningLead(),input.semesterId()));
         for(var trip:generated)jdbc.update("INSERT INTO trip_recurrence_day(rule_id,travel_date,trip_id) VALUES (?,?,?)",rule.id(),LocalDate.parse(trip.date()),trip.tripId());
         count+=generated.size();boolean complete=input.endType().equals("COUNT") && count>=input.occurrences() || end != null && !horizon.isBefore(end);
         jdbc.update("UPDATE trip_recurrence SET generated_count=?,processed_through=?,status=?,last_error=NULL WHERE id=?",count,horizon,complete?"COMPLETED":"ACTIVE",rule.id());return generated;
@@ -93,7 +97,7 @@ public class TripRecurrenceService {
     public List<Map<String,Object>> list(){return jdbc.queryForList("SELECT id FROM trip_recurrence ORDER BY created_at DESC,id DESC",Long.class).stream().map(id->view(rule(id))).toList();}
     public Map<String,Object> changeStatus(long id,String target){return tx.execute(status->{lock();var rule=rule(id);require(!rule.status().equals("COMPLETED"),409,"Lịch lặp đã hoàn tất.");jdbc.update("UPDATE trip_recurrence SET status=?,last_error=NULL WHERE id=?",target,id);if(target.equals("ACTIVE"))fill(rule(id),false);return view(rule(id));});}
     private Map<String,Object> view(Rule rule){
-        var input=rule.input();var result=new LinkedHashMap<String,Object>();result.put("ruleId",rule.id());result.put("routeName",rule.routeName());result.put("vehicle",input.vehicle());result.put("slot",input.slot());result.put("time",input.time());result.put("startDate",input.startDate());result.put("intervalWeeks",input.intervalWeeks());result.put("weekdays",input.weekdays());result.put("endType",input.endType());result.put("untilDate",input.untilDate());result.put("occurrences",input.occurrences());result.put("weeks",input.weeks());result.put("generatedCount",rule.generated());result.put("generatedThrough",rule.through());result.put("status",rule.status());result.put("lastError",rule.error());result.put("bookingOpening",input.bookingOpening());result.put("bookingOpeningLead",input.bookingOpeningLead());return result;
+        var input=rule.input();var result=new LinkedHashMap<String,Object>();result.put("ruleId",rule.id());result.put("semesterId",input.semesterId());result.put("routeName",rule.routeName());result.put("vehicle",input.vehicle());result.put("slot",input.slot());result.put("time",input.time());result.put("startDate",input.startDate());result.put("intervalWeeks",input.intervalWeeks());result.put("weekdays",input.weekdays());result.put("endType",input.endType());result.put("untilDate",input.untilDate());result.put("occurrences",input.occurrences());result.put("weeks",input.weeks());result.put("generatedCount",rule.generated());result.put("generatedThrough",rule.through());result.put("status",rule.status());result.put("lastError",rule.error());result.put("bookingOpening",input.bookingOpening());result.put("bookingOpeningLead",input.bookingOpeningLead());return result;
     }
     @Scheduled(fixedDelay=3600000,initialDelay=60000)
     public void extendActive(){for(long id:jdbc.queryForList("SELECT id FROM trip_recurrence WHERE status='ACTIVE' ORDER BY id",Long.class)){

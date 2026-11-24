@@ -103,11 +103,11 @@ Response data booking và `GET /student/bookings/my`:
 
 `GET /admin/vehicles` trả `[{ vehicleId, licensePlate, capacity, driverId, driverName, status }]`.
 
-`POST /admin/vehicles` và `PUT /admin/vehicles/{id}` dùng body `{ licensePlate, capacity, driverId, status: "ACTIVE" }`. Biển số là tên hiển thị mặc định, chuẩn hóa chữ hoa và bỏ khoảng trắng; phải duy nhất. Số ghế 1–100; driver bắt buộc, attendant tùy chọn; kiểm tra đúng role và tài khoản đang hoạt động. Status nhận `ACTIVE` hoặc `INACTIVE`.
+`POST /admin/vehicles` và `PUT /admin/vehicles/{id}` dùng body `{ licensePlate, capacity, driverId, status: "ACTIVE" }`. Biển số là tên hiển thị mặc định, chuẩn hóa chữ hoa và bỏ khoảng trắng; phải duy nhất. Số ghế 1–100; driver bắt buộc; kiểm tra đúng role và tài khoản đang hoạt động. Status nhận `ACTIVE` hoặc `INACTIVE`.
 
 Sửa mặc định của xe chỉ ảnh hưởng chuyến được tạo sau đó; các chuyến cũ giữ snapshot nhân sự và ghế. API không xóa xe/tài khoản đang được tham chiếu. Xe ngừng sử dụng không tạo được chuyến mới, các chuyến cũ không tự tạm dừng.
 
-`GET /staff/trips` yêu cầu DRIVER hoặc BUS_ATTENDANT, chỉ trả các chuyến từ hôm nay có `driverId` hoặc `busAttendantId` của người đang đăng nhập. Payload dùng Trip response. Nhân sự không có quyền tạo chuyến, xem toàn bộ đội xe hoặc tạo đặt chỗ qua API student. LECTURER sử dụng các API `/student/**` để đặt chỗ như STUDENT; web quản trị vẫn chỉ dành cho ADMIN.
+GET /staff/schedule yêu cầu DRIVER, chỉ trả các chuyến được phân công theo driverId của người đang đăng nhập.
 
 ## Danh sách email được phép đăng nhập (ADMIN)
 

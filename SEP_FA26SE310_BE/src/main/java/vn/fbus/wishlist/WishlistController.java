@@ -11,7 +11,7 @@ import vn.fbus.planning.ScheduleContracts;
 public class WishlistController {
     private final WishlistService service;
     public WishlistController(WishlistService service){this.service=service;}
-    @GetMapping public ApiResponse<?> my(@AuthenticationPrincipal Identity user){return ApiResponse.ok(service.my(user.userId()));}
+    @GetMapping public ApiResponse<?> my(@AuthenticationPrincipal Identity user,@RequestParam(required=false) Long semesterId){return ApiResponse.ok(service.my(user.userId()).stream().filter(row->semesterId==null||semesterId.equals(row.get("semesterId"))).toList());}
     @PostMapping public ApiResponse<?> join(@AuthenticationPrincipal Identity user,@Valid @RequestBody ScheduleContracts.WishlistInput input){return ApiResponse.ok(service.join(user.userId(),input));}
     @PutMapping("/{id}/cancel") public ApiResponse<?> cancel(@AuthenticationPrincipal Identity user,@PathVariable long id){return ApiResponse.ok(service.cancel(user.userId(),id));}
 }

@@ -40,7 +40,7 @@ public class BookingOpeningService {
   var now=LocalDateTime.now(clock);return new Access(group,at,at==null||!now.isBefore(at),now);
  }
  public Access access(long user,TripRow trip){return access(priorities.group(user),trip.bookingOpening());}
- public void requireOpen(long user,TripRow trip){var a=access(user,trip);require(a.allowed(),409,"Nhóm của bạn mở đặt chỗ lúc "+(a.opensAt()==null?"":a.opensAt().format(DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy")))+" (giờ Việt Nam).");}
+ public void requireOpen(long user,TripRow trip){var a=access(user,trip);require(a.allowed(),409,"Nhóm của bạn mở đặt chỗ lúc "+(a.opensAt()==null?"":a.opensAt().format(DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy")))+".");}
  public List<Map<String,Object>> studentTrips(long user,List<TripView> rows){
   String group=priorities.group(user);return rows.stream().map(trip->{Map<String,Object> item=json.convertValue(trip,new TypeReference<LinkedHashMap<String,Object>>(){});item.put("bookingAccess",access(group,trip.bookingOpening()));return item;}).toList();
  }

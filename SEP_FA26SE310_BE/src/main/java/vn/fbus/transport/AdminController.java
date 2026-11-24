@@ -18,12 +18,13 @@ public class AdminController {
     @PostMapping("/stops") ApiResponse<?> stop(@Valid @RequestBody Contracts.NewStop input) { return ApiResponse.ok(service.createStop(input)); }
     @GetMapping("/routes") ApiResponse<?> routes() { return ApiResponse.ok(repository.routes()); }
     @PostMapping("/routes") ApiResponse<?> route(@Valid @RequestBody Contracts.NewRoute input) { return ApiResponse.ok(service.createRoute(input)); }
-    @GetMapping("/trips") ApiResponse<?> trips() { return ApiResponse.ok(service.adminTrips()); }
+    @GetMapping("/trips") ApiResponse<?> trips(@RequestParam(required=false) Long semesterId) { return ApiResponse.ok(service.adminTrips(semesterId)); }
     @PostMapping("/trips") ApiResponse<?> trip(@Valid @RequestBody Contracts.NewTrip input) { return ApiResponse.ok(service.createTrip(input)); }
     @PostMapping("/trips/batch") ApiResponse<?> batch(@Valid @RequestBody Contracts.BatchTrips input) { return ApiResponse.ok(service.createBatch(input)); }
     @PostMapping("/users") ApiResponse<?> createUser(@Valid @RequestBody Contracts.NewUser input) { return ApiResponse.ok(users.create(input)); }
     @PutMapping("/trips/{id}/status") ApiResponse<?> status(@PathVariable long id, @Valid @RequestBody Contracts.TripStatus input) { return ApiResponse.ok(service.changeStatus(id,input.status())); }
     @PutMapping("/trips/{id}/booking-opening") ApiResponse<?> opening(@PathVariable long id,@Valid @RequestBody Contracts.BookingOpeningUpdate input){return ApiResponse.ok(service.changeBookingOpening(id,input));}
+    @PostMapping("/trips/{id}/cancel") ApiResponse<?> cancel(@org.springframework.security.core.annotation.AuthenticationPrincipal vn.fbus.auth.AuthFilter.Identity who,@PathVariable long id,@Valid @RequestBody Contracts.CancelTrip input){return ApiResponse.ok(service.cancelTrip(who.userId(),id,input.reason()));}
     @GetMapping("/users") ApiResponse<?> users(@RequestParam(defaultValue="0") int page, @RequestParam(defaultValue="20") int size) {
         ApiException.require(page>=0 && page<=100000 && size>=1 && size<=100,400,"Phân trang không hợp lệ.");
         long total=jdbc.queryForObject("SELECT COUNT(*) FROM app_user WHERE role IN ('ADMIN','STUDENT','LECTURER','DRIVER')",Long.class);

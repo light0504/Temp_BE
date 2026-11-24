@@ -26,6 +26,7 @@ public final class Contracts {
                                      @Min(1) @Max(8783) Integer regularHours) {}
     public record BookingOpeningUpdate(@Valid BookingOpening bookingOpening, @Valid BookingOpeningLead bookingOpeningLead) {}
     public interface TripBooking extends TripVehicle {
+        Long semesterId();
         BookingOpening bookingOpening();
         BookingOpeningLead bookingOpeningLead();
     }
@@ -34,14 +35,14 @@ public final class Contracts {
                           @Size(max=30) String vehicle, @Min(1) @Max(100) Integer capacity,
                           @Positive Long driverId, @Size(max=150) String driver,
                           @Valid BookingOpening bookingOpening,
-                          @Valid BookingOpeningLead bookingOpeningLead) implements TripBooking {}
+                          @Valid BookingOpeningLead bookingOpeningLead, @Positive Long semesterId) implements TripBooking {}
     public record BatchTrips(@NotNull @Positive Long routeId, @Positive Long vehicleId,
                              @NotNull @Size(min=1,max=90) List<@NotNull LocalDate> dates,
                              @NotNull LocalTime time, @NotNull @Min(1) @Max(6) Integer slot,
                              @Size(max=30) String vehicle, @Min(1) @Max(100) Integer capacity,
                              @Positive Long driverId, @Size(max=150) String driver,
                              @Valid BookingOpening bookingOpening,
-                          @Valid BookingOpeningLead bookingOpeningLead) implements TripBooking {}
+                          @Valid BookingOpeningLead bookingOpeningLead, @Positive Long semesterId) implements TripBooking {}
     public record VehicleInput(@NotBlank @Size(max=30) String licensePlate,
                                @NotNull @Min(1) @Max(100) Integer capacity,
                                @NotNull @Positive Long driverId,
@@ -51,6 +52,7 @@ public final class Contracts {
                           @NotBlank @Size(min=8,max=72) String password,
                           @NotBlank @Size(max=150) String fullName,
                           @NotNull @Pattern(regexp="STUDENT|DRIVER|LECTURER") String role) {}
+    public record CancelTrip(@NotBlank @Size(max=500) String reason) {}
     public record TripStatus(@NotNull @Pattern(regexp="SCHEDULED|PAUSED") String status) {}
     public record NewBooking(@NotNull @Positive Long tripId, @NotNull @Positive Long boardingTripStopId,
                              @NotNull @Positive Long alightingTripStopId, @NotNull @Positive Long seatId,

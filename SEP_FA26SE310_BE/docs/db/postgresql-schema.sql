@@ -98,7 +98,7 @@ INSERT INTO operation_lock(name) VALUES ('trip-schedule');
 -- V2__Expand_user_roles.java (PostgreSQL equivalent after V1)
 ALTER TABLE app_user DROP CONSTRAINT app_user_role_check;
 ALTER TABLE app_user ADD CONSTRAINT chk_user_role
-  CHECK (role IN ('ADMIN','STUDENT','DRIVER','BUS_ATTENDANT','LECTURER'));
+  CHECK (role IN ('ADMIN','STUDENT','DRIVER','LECTURER'));
 
 -- V3__Fleet_and_trip_assignments.sql
 CREATE TABLE vehicle (
@@ -106,22 +106,18 @@ CREATE TABLE vehicle (
   license_plate VARCHAR(30) NOT NULL UNIQUE,
   capacity INTEGER NOT NULL CHECK (capacity BETWEEN 1 AND 100),
   driver_id BIGINT NOT NULL REFERENCES app_user(id),
-  bus_attendant_id BIGINT REFERENCES app_user(id),
   status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','INACTIVE'))
 );
 ALTER TABLE trip ADD COLUMN vehicle_id BIGINT REFERENCES vehicle(id);
 ALTER TABLE trip ADD COLUMN driver_id BIGINT REFERENCES app_user(id);
-ALTER TABLE trip ADD COLUMN bus_attendant_id BIGINT REFERENCES app_user(id);
-ALTER TABLE trip ADD COLUMN bus_attendant VARCHAR(150);
 CREATE INDEX idx_trip_driver ON trip(driver_id,departure_at,arrival_at);
-CREATE INDEX idx_trip_attendant ON trip(bus_attendant_id,departure_at,arrival_at);
 CREATE INDEX idx_trip_vehicle ON trip(vehicle_id,departure_at,arrival_at);
 
 -- V4__Email_access_list.sql
 CREATE TABLE email_access (
   email VARCHAR(254) PRIMARY KEY,
   full_name VARCHAR(150) NOT NULL DEFAULT '',
-  role VARCHAR(20) NOT NULL CHECK (role IN ('STUDENT','LECTURER','DRIVER','BUS_ATTENDANT')),
+  role VARCHAR(20) NOT NULL CHECK (role IN ('STUDENT','LECTURER','DRIVER')),
   imported_by BIGINT REFERENCES app_user(id),
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -181,8 +177,6 @@ CREATE TABLE trip_recurrence (
   capacity INTEGER NOT NULL CHECK(capacity BETWEEN 1 AND 100),
   driver_id BIGINT REFERENCES app_user(id),
   driver VARCHAR(150) NOT NULL,
-  bus_attendant_id BIGINT REFERENCES app_user(id),
-  bus_attendant VARCHAR(150),
   departure_time TIME NOT NULL,
   slot INTEGER NOT NULL CHECK(slot BETWEEN 1 AND 6),
   start_date DATE NOT NULL,

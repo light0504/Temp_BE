@@ -14,6 +14,6 @@ public final class RecurrenceContracts {
         @NotNull @Pattern(regexp="NEVER|UNTIL|COUNT|WEEKS") String endType,LocalDate untilDate,@Min(1) @Max(1000) Integer occurrences,
         @NotBlank @Pattern(regexp="[A-Za-z0-9_-]{16,100}") String idempotencyKey,@Valid @JsonInclude(JsonInclude.Include.NON_NULL) Contracts.BookingOpening bookingOpening,
         @Min(1) @Max(1000) @JsonInclude(JsonInclude.Include.NON_NULL) Integer weeks,
-        @Valid @JsonInclude(JsonInclude.Include.NON_NULL) Contracts.BookingOpeningLead bookingOpeningLead) implements Contracts.TripBooking {}
+        @Valid @JsonInclude(JsonInclude.Include.NON_NULL) Contracts.BookingOpeningLead bookingOpeningLead, @Positive Long semesterId) implements Contracts.TripBooking {}
     public record Status(@NotNull @Pattern(regexp="ACTIVE|PAUSED") String status) {}
 }

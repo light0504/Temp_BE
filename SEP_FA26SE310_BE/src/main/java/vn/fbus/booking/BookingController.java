@@ -11,7 +11,7 @@ public class BookingController {
     private final BookingRepository repository;
     private final BookingService service;
     public BookingController(BookingRepository repository, BookingService service) { this.repository=repository; this.service=service; }
-    @GetMapping("/my") ApiResponse<?> my(@AuthenticationPrincipal Identity user) { return ApiResponse.ok(repository.my(user.userId())); }
+    @GetMapping("/my") ApiResponse<?> my(@AuthenticationPrincipal Identity user,@RequestParam(required=false) Long semesterId) { return ApiResponse.ok(repository.my(user.userId()).stream().filter(b->semesterId==null||b.semesterId()==semesterId).toList()); }
     @GetMapping("/{id}") ApiResponse<?> one(@AuthenticationPrincipal Identity user, @PathVariable long id) { repository.row(id,user.userId()); return ApiResponse.ok(repository.view(id)); }
     @PostMapping ApiResponse<?> create(@AuthenticationPrincipal Identity user, @Valid @RequestBody Contracts.NewBooking input) { return ApiResponse.ok(service.create(user.userId(),input)); }
     @PutMapping("/{id}/cancel") ApiResponse<?> cancel(@AuthenticationPrincipal Identity user, @PathVariable long id) { return ApiResponse.ok(service.cancel(user.userId(),id)); }

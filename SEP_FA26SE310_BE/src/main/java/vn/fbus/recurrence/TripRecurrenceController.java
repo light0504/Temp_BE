@@ -8,7 +8,7 @@ import vn.fbus.common.ApiResponse;
 public class TripRecurrenceController {
     private final TripRecurrenceService service;
     public TripRecurrenceController(TripRecurrenceService service){this.service=service;}
-    @GetMapping public ApiResponse<?> list(){return ApiResponse.ok(service.list());}
+    @GetMapping public ApiResponse<?> list(@RequestParam(required=false) Long semesterId){return ApiResponse.ok(service.list().stream().filter(row->semesterId==null||semesterId.equals(row.get("semesterId"))).toList());}
     @PostMapping public ApiResponse<?> create(@AuthenticationPrincipal Identity admin,@Valid @RequestBody RecurrenceContracts.Create input){return ApiResponse.ok(service.create(admin.userId(),input));}
     @PutMapping("/{id}/status") public ApiResponse<?> status(@PathVariable long id,@Valid @RequestBody RecurrenceContracts.Status input){return ApiResponse.ok(service.changeStatus(id,input.status()));}
 }

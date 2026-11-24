@@ -12,11 +12,11 @@ import java.util.*;
 public class TransportRepository {
     public record StopView(long stopId, String stopCode, String name, String address, Integer offsetMinutes) {}
     public record RouteView(long routeId, String routeCode, String name, List<StopView> stops) {}
-    public record TripStopView(long tripStopId, long stopId, String name, int position, LocalDateTime arrivalAt) {}
+    public record TripStopView(long tripStopId, long stopId, String name, int position, LocalDateTime arrivalAt, LocalDateTime actualArrivalAt, LocalDateTime actualDepartureAt) {}
     public record TripRow(long id, String code, long routeId, String routeName, LocalDateTime departureAt,
                           LocalDateTime arrivalAt, int slot, String vehicle, String driver, int capacity, String status,
                           Long vehicleId, Long driverId, String executionStatus, int currentStopPosition, boolean inTransit,
-                          Contracts.BookingOpening bookingOpening, Contracts.BookingOpeningLead bookingOpeningLead) {
+                          Contracts.BookingOpening bookingOpening, Contracts.BookingOpeningLead bookingOpeningLead, long semesterId, String cancellationNote) {
         public int firstBoardingPosition() {
             return inTransit ? currentStopPosition + 1 : currentStopPosition;
         }
@@ -25,12 +25,12 @@ public class TransportRepository {
     public record TripView(long tripId, String tripCode, long routeId, String routeName, String date, String time,
                            String arrivalTime, int slot, String vehicle, String driver, int capacity, int booked,
                            String status, int availableSeats, List<TripStopView> stops,
-                           Long vehicleId, Long driverId, String executionStatus, Contracts.BookingOpening bookingOpening, Contracts.BookingOpeningLead bookingOpeningLead) {}
+                           Long vehicleId, Long driverId, String executionStatus, Contracts.BookingOpening bookingOpening, Contracts.BookingOpeningLead bookingOpeningLead, long semesterId, String cancellationNote) {}
     private final JdbcTemplate jdbc;
     private final RowMapper<TripRow> tripMapper = (rs,n) -> new TripRow(rs.getLong("id"),rs.getString("code"),rs.getLong("route_id"),
         rs.getString("route_name"),rs.getObject("departure_at",LocalDateTime.class),rs.getObject("arrival_at",LocalDateTime.class),
         rs.getInt("slot"),rs.getString("vehicle"),rs.getString("driver"),rs.getInt("capacity"),rs.getString("status"),
-        rs.getObject("vehicle_id",Long.class),rs.getObject("driver_id",Long.class),rs.getString("execution_status"),rs.getInt("current_stop_position"),rs.getBoolean("in_transit"),bookingOpening(rs),bookingOpeningLead(rs));
+        rs.getObject("vehicle_id",Long.class),rs.getObject("driver_id",Long.class),rs.getString("execution_status"),rs.getInt("current_stop_position"),rs.getBoolean("in_transit"),bookingOpening(rs),bookingOpeningLead(rs),rs.getLong("semester_id"),rs.getString("cancellation_note"));
     public static Contracts.BookingOpening bookingOpening(java.sql.ResultSet row) throws java.sql.SQLException {
         var staff=row.getObject("staff_booking_opens_at",LocalDateTime.class);
         return staff==null?null:new Contracts.BookingOpening(staff,row.getObject("priority_student_booking_opens_at",LocalDateTime.class),row.getObject("regular_booking_opens_at",LocalDateTime.class));
@@ -68,8 +68,8 @@ public class TransportRepository {
         return jdbc.query("SELECT t.*,r.name AS route_name FROM trip t JOIN route r ON r.id=t.route_id WHERE t.driver_id=? AND t.arrival_at>=? ORDER BY t.departure_at",tripMapper,userId,from);
     }
     public List<TripStopView> tripStops(long id) {
-        return jdbc.query("SELECT t.*,s.name FROM trip_stop t JOIN stop s ON s.id=t.stop_id WHERE t.trip_id=? ORDER BY t.position",
-            (rs,n) -> new TripStopView(rs.getLong("id"),rs.getLong("stop_id"),rs.getString("name"),rs.getInt("position"),rs.getObject("arrival_at",LocalDateTime.class)),id);
+        return jdbc.query("SELECT t.*,s.name, (SELECT MIN(e.created_at) FROM crew_event e WHERE e.trip_id=t.trip_id AND e.stop_position=t.position AND e.action IN ('START','ARRIVE')) AS actual_arrival_at, (SELECT MIN(e.created_at) FROM crew_event e WHERE e.trip_id=t.trip_id AND e.stop_position=t.position AND e.action='DEPART') AS actual_departure_at FROM trip_stop t JOIN stop s ON s.id=t.stop_id WHERE t.trip_id=? ORDER BY t.position",
+            (rs,n) -> new TripStopView(rs.getLong("id"),rs.getLong("stop_id"),rs.getString("name"),rs.getInt("position"),rs.getObject("arrival_at",LocalDateTime.class),rs.getObject("actual_arrival_at",LocalDateTime.class),rs.getObject("actual_departure_at",LocalDateTime.class)),id);
     }
     public List<SeatView> seats(long tripId, int start, int end) {
         return jdbc.query("""
@@ -90,6 +90,6 @@ public class TransportRepository {
         }
         return new TripView(trip.id(),trip.code(),trip.routeId(),trip.routeName(),trip.departureAt().toLocalDate().toString(),
             trip.departureAt().toLocalTime().toString(),trip.arrivalAt().toLocalTime().toString(),trip.slot(),trip.vehicle(),trip.driver(),trip.capacity(),peak,trip.status(),available,points,
-            trip.vehicleId(),trip.driverId(),trip.executionStatus(),trip.bookingOpening(),trip.bookingOpeningLead());
+            trip.vehicleId(),trip.driverId(),trip.executionStatus(),trip.bookingOpening(),trip.bookingOpeningLead(),trip.semesterId(),trip.cancellationNote());
     }
 }
